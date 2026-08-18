@@ -22,6 +22,16 @@
   --tip: #1a7f37;
   --tip-bg: #f2faf4;
   --code-bg: #f7f8f9;
+  --syntax-keyword: #6f42c1;
+  --syntax-function: #1d4ed8;
+  --syntax-string: #067647;
+  --syntax-number: #a15c00;
+  --syntax-comment: #6b717a;
+  --syntax-operator: #9f1239;
+  --syntax-builtin: #0e7490;
+  --syntax-variable: #275d96;
+  --syntax-meta: #7c3aed;
+  --syntax-error: #b42318;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,6 +51,16 @@
     --tip: #5fd382;
     --tip-bg: #1f2a23;
     --code-bg: #22252a;
+    --syntax-keyword: #c4b5fd;
+    --syntax-function: #93c5fd;
+    --syntax-string: #86efac;
+    --syntax-number: #fbbf24;
+    --syntax-comment: #8b949e;
+    --syntax-operator: #fda4af;
+    --syntax-builtin: #67e8f9;
+    --syntax-variable: #a5c8ff;
+    --syntax-meta: #d8b4fe;
+    --syntax-error: #fda4af;
   }
 }
 
@@ -341,6 +361,109 @@ pre code {
   font-size: inherit;
 }
 
+.code-highlight .tok-c,
+.code-highlight .tok-ch,
+.code-highlight .tok-cm,
+.code-highlight .tok-c1 {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+
+.code-highlight .tok-cp,
+.code-highlight .tok-cpf,
+.code-highlight .tok-cs {
+  color: var(--syntax-meta);
+}
+
+.code-highlight .tok-k,
+.code-highlight .tok-kc,
+.code-highlight .tok-kd,
+.code-highlight .tok-kn,
+.code-highlight .tok-kp,
+.code-highlight .tok-kr,
+.code-highlight .tok-kt {
+  color: var(--syntax-keyword);
+  font-weight: 600;
+}
+
+.code-highlight .tok-s,
+.code-highlight .tok-sa,
+.code-highlight .tok-sb,
+.code-highlight .tok-sc,
+.code-highlight .tok-dl,
+.code-highlight .tok-sd,
+.code-highlight .tok-s2,
+.code-highlight .tok-se,
+.code-highlight .tok-sh,
+.code-highlight .tok-si,
+.code-highlight .tok-sx,
+.code-highlight .tok-sr,
+.code-highlight .tok-s1,
+.code-highlight .tok-ss {
+  color: var(--syntax-string);
+}
+
+.code-highlight .tok-m,
+.code-highlight .tok-mb,
+.code-highlight .tok-mf,
+.code-highlight .tok-mh,
+.code-highlight .tok-mi,
+.code-highlight .tok-mo,
+.code-highlight .tok-il,
+.code-highlight .tok-no {
+  color: var(--syntax-number);
+}
+
+.code-highlight .tok-nf,
+.code-highlight .tok-fm,
+.code-highlight .tok-nc,
+.code-highlight .tok-nd,
+.code-highlight .tok-ne,
+.code-highlight .tok-nl,
+.code-highlight .tok-nn {
+  color: var(--syntax-function);
+}
+
+.code-highlight .tok-nb,
+.code-highlight .tok-bp {
+  color: var(--syntax-builtin);
+}
+
+.code-highlight .tok-na,
+.code-highlight .tok-nv,
+.code-highlight .tok-vc,
+.code-highlight .tok-vg,
+.code-highlight .tok-vi,
+.code-highlight .tok-vm {
+  color: var(--syntax-variable);
+}
+
+.code-highlight .tok-o,
+.code-highlight .tok-ow {
+  color: var(--syntax-operator);
+}
+
+.code-highlight .tok-gh,
+.code-highlight .tok-gu,
+.code-highlight .tok-gs {
+  color: var(--syntax-meta);
+  font-weight: 600;
+}
+
+.code-highlight .tok-gd {
+  color: var(--caution);
+}
+
+.code-highlight .tok-gi {
+  color: var(--tip);
+}
+
+.code-highlight .tok-err {
+  color: var(--syntax-error);
+  text-decoration: underline wavy;
+  text-decoration-thickness: 1px;
+}
+
 math {
   color: var(--ink);
   font-family: "STIX Two Math", "Cambria Math", "Latin Modern Math",
@@ -370,13 +493,10 @@ math annotation {
 
 .math-block {
   max-width: 100%;
-  margin: 1.55em 0;
-  padding: 1.12em 1.28em;
+  margin: 1.65em 0 1.8em;
+  padding: 0.18em 0 0.28em;
   overflow-x: auto;
   overflow-y: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: var(--code-bg);
   text-align: center;
   scrollbar-color: var(--ink-3) transparent;
   scrollbar-width: thin;
@@ -386,7 +506,7 @@ math annotation {
   display: block;
   width: max-content;
   margin: 0 auto;
-  font-size: 1.12em;
+  font-size: 1.1em;
 }
 
 .table-wrap {
@@ -479,6 +599,16 @@ figcaption {
     --tip: #000000;
     --tip-bg: #f3f3f3;
     --code-bg: #f5f5f5;
+    --syntax-keyword: #000000;
+    --syntax-function: #000000;
+    --syntax-string: #292929;
+    --syntax-number: #292929;
+    --syntax-comment: #5c5c5c;
+    --syntax-operator: #000000;
+    --syntax-builtin: #000000;
+    --syntax-variable: #292929;
+    --syntax-meta: #000000;
+    --syntax-error: #000000;
   }
 
   body {
@@ -520,7 +650,6 @@ figcaption {
 
   .math-block {
     overflow: visible;
-    background: #ffffff;
   }
 
   .file-chip::before {
@@ -640,8 +769,9 @@ x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
 </table>
 </div>
 <h2>代码块</h2>
-<pre><code>def render(source: str) -&gt; str:
-    return source  # visible text stays unchanged
+<pre class="code-block code-highlight"><code><span class="tok-k">def</span><span class="tok-w"> </span><span class="tok-nf">render</span><span class="tok-p">(</span><span class="tok-n">source</span><span class="tok-p">:</span> <span class="tok-nb">str</span><span class="tok-p">,</span> <span class="tok-n">retries</span><span class="tok-p">:</span> <span class="tok-nb">int</span> <span class="tok-o">=</span> <span class="tok-mi">2</span><span class="tok-p">)</span> <span class="tok-o">-&gt;</span> <span class="tok-nb">str</span><span class="tok-p">:</span>
+    <span class="tok-n">message</span> <span class="tok-o">=</span> <span class="tok-s2">&quot;visible text stays unchanged&quot;</span>
+    <span class="tok-k">return</span> <span class="tok-n">source</span> <span class="tok-k">if</span> <span class="tok-n">retries</span> <span class="tok-o">&gt;=</span> <span class="tok-mi">0</span> <span class="tok-k">else</span> <span class="tok-n">message</span>
 </code></pre>
 <h2>图片与图注</h2>
 <div class="image-paragraph"><figure class="reading-figure"><img src="sample-figure.svg" alt="阅读视图示意图" class="reading-image"><figcaption>阅读视图示意图</figcaption></figure></div>

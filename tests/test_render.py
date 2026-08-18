@@ -120,6 +120,58 @@ class FormulaRenderingTests(unittest.TestCase):
         self.assertIn('stretchy="true"', mathml)
         self.assertNotIn("<script", mathml.lower())
 
+    def test_known_fence_language_gets_static_exact_text_highlighting(self) -> None:
+        source = (
+            "# Code\n\n"
+            "```python\n"
+            "def render(value: str = \"<script>\") -> str:\n"
+            "    return value  # unchanged\n"
+            "```\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            markdown_path = Path(directory) / "code.md"
+            markdown_path.write_text(source, encoding="utf-8", newline="\n")
+            output_path, counts = render.render_file(markdown_path)
+            html = output_path.read_text(encoding="utf-8")
+
+            self.assertEqual(counts[14], 1)
+            self.assertIn('class="code-block code-highlight"', html)
+            self.assertIn('class="tok-k"', html)
+            self.assertIn('class="tok-s2"', html)
+            self.assertNotIn("<script>", html.lower())
+
+            tokens = render.build_parser().parse(source)
+            audit = render.parse_html_audit(html)
+            self.assertEqual(
+                render.markdown_fenced_code_sources(tokens),
+                audit.fenced_code_sources,
+            )
+
+    def test_unknown_fence_language_stays_plain(self) -> None:
+        code_html, highlighted = render.render_fenced_code(
+            "a < b\n", "not-a-real-language"
+        )
+        self.assertFalse(highlighted)
+        self.assertEqual(code_html, "a &lt; b\n")
+
+    def test_fenced_code_whitespace_tampering_fails_exact_audit(self) -> None:
+        source = "# Code\n\n```python\ndef f():\n    return 1\n```\n"
+        parser = render.build_parser()
+        tokens = parser.parse(source)
+        render.annotate_tokens(tokens)
+        body = parser.renderer.render(tokens, parser.options, {})
+        html = render.build_document("Code", "", body)
+        tampered = html.replace(
+            '\n    <span class="tok-k">return</span>',
+            '\n  <span class="tok-k">return</span>',
+            1,
+        )
+        self.assertNotEqual(html, tampered)
+        with self.assertRaisesRegex(
+            render.RenderError, "fenced-code source equivalence check failed"
+        ):
+            render.assert_text_equivalent(tokens, tampered)
+
 
 if __name__ == "__main__":
     unittest.main()

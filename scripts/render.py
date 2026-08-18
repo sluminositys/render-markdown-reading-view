@@ -20,6 +20,10 @@ from markdown_it.common.utils import escapeHtml
 from markdown_it.renderer import RendererHTML
 from markdown_it.token import Token
 from mdit_py_plugins.dollarmath import dollarmath_plugin
+from pygments import highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import get_lexer_by_name
+from pygments.util import ClassNotFound
 
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -34,6 +38,7 @@ WHITESPACE_RE = re.compile(r"\s+", re.UNICODE)
 MATH_ANNOTATION_ENCODING = "application/x-tex"
 MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML"
 MATH_TOKEN_TYPES = {"math_inline", "math_inline_double", "math_block"}
+CODE_FORMATTER = HtmlFormatter(nowrap=True, classprefix="tok-")
 ALLOWED_MATHML_ELEMENTS = {
     "maligngroup",
     "malignmark",
@@ -255,11 +260,14 @@ class VisibleTextParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.formula_sources: list[str] = []
+        self.fenced_code_sources: list[str] = []
         self._ignored_depth = 0
         self._math_depth = 0
         self._annotation_depth = 0
         self._annotation_parts: list[str] = []
         self._formula_index = 0
+        self._code_capture = False
+        self._code_parts: list[str] = []
 
     def handle_starttag(
         self, tag: str, attrs: list[tuple[str, str | None]]
@@ -275,6 +283,11 @@ class VisibleTextParser(HTMLParser):
                 self._formula_index += 1
             self._math_depth += 1
             return
+        if tag == "pre":
+            classes = (dict(attrs).get("class") or "").split()
+            if "code-block" in classes:
+                self._code_capture = True
+                self._code_parts = []
         if tag == "annotation" and self._math_depth:
             attributes = dict(attrs)
             if attributes.get("encoding") == MATH_ANNOTATION_ENCODING:
@@ -294,12 +307,18 @@ class VisibleTextParser(HTMLParser):
                 self.formula_sources.append("".join(self._annotation_parts))
                 self._annotation_parts = []
             return
+        if tag == "pre" and self._code_capture:
+            self.fenced_code_sources.append("".join(self._code_parts))
+            self._code_capture = False
+            self._code_parts = []
         if tag == "math" and self._math_depth:
             self._math_depth -= 1
 
     def handle_data(self, data: str) -> None:
         if self._ignored_depth:
             return
+        if self._code_capture:
+            self._code_parts.append(data)
         if self._annotation_depth:
             self._annotation_parts.append(data)
         elif not self._math_depth:
@@ -346,6 +365,30 @@ def render_mathml(source: str, display: str) -> str:
     return ElementTree.tostring(root, encoding="unicode", short_empty_elements=True)
 
 
+def render_fenced_code(source: str, info: str) -> tuple[str, bool]:
+    """Return exact-text code HTML and whether a known lexer was applied."""
+    language = info.strip().split(maxsplit=1)[0].lower() if info.strip() else ""
+    if not language:
+        return escapeHtml(source), False
+    try:
+        lexer = get_lexer_by_name(
+            language,
+            stripnl=False,
+            stripall=False,
+            ensurenl=False,
+            tabsize=0,
+        )
+    except ClassNotFound:
+        return escapeHtml(source), False
+    try:
+        return highlight(source, lexer, CODE_FORMATTER), True
+    except Exception as error:
+        raise RenderError(
+            f"syntax highlighting failed for language {language!r}: "
+            f"{type(error).__name__}: {error}"
+        ) from error
+
+
 class ReadingViewRenderer(RendererHTML):
     """HTML renderer for the syntax-only reading-view mappings."""
 
@@ -374,7 +417,13 @@ class ReadingViewRenderer(RendererHTML):
         env: dict[str, Any],
     ) -> str:
         del options, env
-        return f"<pre><code>{escapeHtml(tokens[idx].content)}</code></pre>\n"
+        token = tokens[idx]
+        code_html, highlighted = render_fenced_code(token.content, token.info)
+        style_class = "code-highlight" if highlighted else "code-plain"
+        return (
+            f'<pre class="code-block {style_class}"><code>'
+            f"{code_html}</code></pre>\n"
+        )
 
     def math_inline(
         self,
@@ -517,14 +566,24 @@ def markdown_audit_payload(tokens: Sequence[Token]) -> tuple[str, list[str]]:
     return "\n".join(parts), formula_sources
 
 
+def markdown_fenced_code_sources(tokens: Sequence[Token]) -> list[str]:
+    """Extract exact fenced-code sources in document order."""
+    return [token.content for token in tokens if token.type == "fence"]
+
+
 def normalize_whitespace(value: str) -> str:
     return WHITESPACE_RE.sub(" ", value).strip()
 
 
-def html_audit_payload(html: str) -> tuple[str, list[str]]:
+def parse_html_audit(html: str) -> VisibleTextParser:
     parser = VisibleTextParser()
     parser.feed(html)
     parser.close()
+    return parser
+
+
+def html_audit_payload(html: str) -> tuple[str, list[str]]:
+    parser = parse_html_audit(html)
     return parser.text, parser.formula_sources
 
 
@@ -548,6 +607,19 @@ def formula_diff(expected: Sequence[str], actual: Sequence[str]) -> str:
             actual_lines,
             fromfile="markdown-formula-sources",
             tofile="html-mathml-annotations",
+        )
+    )
+
+
+def code_diff(expected: Sequence[str], actual: Sequence[str]) -> str:
+    expected_lines = [f"{index}: {value!r}\n" for index, value in enumerate(expected)]
+    actual_lines = [f"{index}: {value!r}\n" for index, value in enumerate(actual)]
+    return "".join(
+        difflib.unified_diff(
+            expected_lines,
+            actual_lines,
+            fromfile="markdown-fenced-code-sources",
+            tofile="html-fenced-code-text",
         )
     )
 
@@ -849,7 +921,11 @@ def build_document(title: str, css: str, body: str) -> str:
 
 def assert_text_equivalent(tokens: Sequence[Token], html: str) -> None:
     expected_text, expected_formulas = markdown_audit_payload(tokens)
-    actual_text, actual_formulas = html_audit_payload(html)
+    expected_code = markdown_fenced_code_sources(tokens)
+    html_audit = parse_html_audit(html)
+    actual_text = html_audit.text
+    actual_formulas = html_audit.formula_sources
+    actual_code = html_audit.fenced_code_sources
     expected_text = normalize_whitespace(expected_text)
     actual_text = normalize_whitespace(actual_text)
     if expected_text != actual_text:
@@ -861,6 +937,11 @@ def assert_text_equivalent(tokens: Sequence[Token], html: str) -> None:
         raise RenderError(
             "formula-source equivalence check failed\n"
             + formula_diff(expected_formulas, actual_formulas)
+        )
+    if expected_code != actual_code:
+        raise RenderError(
+            "fenced-code source equivalence check failed\n"
+            + code_diff(expected_code, actual_code)
         )
 
 

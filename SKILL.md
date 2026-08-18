@@ -1,6 +1,6 @@
 ---
 name: render-markdown-reading-view
-description: Present an existing Markdown file through a polished, self-contained single-file HTML reading view, including clear static MathML typesetting for explicit TeX formulas. Use whenever an AI application is about to show Markdown for reading, including requests to render, present, typeset, beautify, or generate a readable version, and report-like Markdown artifacts produced by an agent. Do not use for requests to edit, rewrite, summarize, translate, or otherwise change Markdown content.
+description: Present an existing Markdown file through a polished, self-contained single-file HTML reading view, including clear static MathML and build-time syntax-colored code. Use whenever an AI application is about to show Markdown for reading, including requests to render, present, typeset, beautify, or generate a readable version, and report-like Markdown artifacts produced by an agent. Do not use for requests to edit, rewrite, summarize, translate, or otherwise change Markdown content.
 ---
 
 # Render Markdown Reading View
@@ -21,10 +21,10 @@ Whenever an AI application would present a Markdown document for reading, presen
 ## 唯一工作流
 
 1. 定位作为唯一事实源的 `.md` 文件。
-2. 运行 `python <skill-directory>/scripts/render.py <input.md>`。脚本在 Markdown 同目录生成同名 `.html`,强制执行正文与公式源码等价校验,并打印规则触发计数。
+2. 运行 `python <skill-directory>/scripts/render.py <input.md>`。脚本在 Markdown 同目录生成同名 `.html`,强制执行正文、公式源码与围栏代码源码等价校验,并打印规则触发计数。
 3. 将生成的 `.html` 作为阅读版交付,同时保留 `.md` 作为唯一可编辑源。模型不得触碰 HTML 正文。
 
-若脚本缺少 `markdown-it-py`、`mdit-py-plugins` 或 `latex2mathml`,停止并报告依赖缺失;不得以手写 HTML 代替确定性渲染。
+若脚本缺少 `markdown-it-py`、`mdit-py-plugins`、`latex2mathml` 或 `Pygments`,停止并报告依赖缺失;不得以手写 HTML 代替确定性渲染。
 
 ## 渲染不满意时
 
@@ -52,12 +52,14 @@ Whenever an AI application would present a Markdown document for reading, presen
 | 11 | 行内 code 内容含 `/`,或以已知扩展名结尾 | 文件胶囊;`py js ts md go rs java sh json yaml css html` 使用扩展名色点,其余路径使用灰点 |
 | 12 | 其余行内 code | 浅底胶囊 code |
 | 13 | 表格 | 无竖线表格;整列除表头均为数字、百分比或货币时,该列使用 `tabular-nums` |
-| 14 | 围栏代码块 | `pre` 样式,不做语法高亮 |
+| 14 | 围栏代码块 | 信息字符串首项是 Pygments 已知语言别名时,构建期生成静态着色 `span`;无语言或未知语言时按普通 `pre` 渲染;不从代码内容猜语言 |
 | 15 | `![alt](src)` | `figure`;alt 非空时作为 `figcaption`,为空时无图注,不编造文本 |
 | 16 | `---` 水平线、链接、粗体、斜体 | 对应基础样式 |
 | 17 | 单行 `$...$` | 构建期转为行内静态 MathML,按正文基线排版;原始 TeX 写入 `annotation` |
-| 18 | 块起始处由 `$$` 包围且内部无空行 | 构建期转为居中、可横向滚动的块级静态 MathML;原始 TeX 写入 `annotation` |
+| 18 | 块起始处由 `$$` 包围且内部无空行 | 构建期转为与正文同底色、留白居中、超宽时可横向滚动的块级静态 MathML;原始 TeX 写入 `annotation` |
 
 规则 8 和规则 9 的“每一项都”是硬条件。只要存在一个不匹配项,整个列表必须按规则 10 渲染。
 
 公式只由规则 17 和规则 18 的显式定界符触发。不得从普通文本、代码块或货币金额推断公式,不得自动编号、补标签或改写 TeX。公式转换失败时必须退出非零且不写入新的 HTML。
+
+代码语言只取围栏信息字符串的第一个显式别名。不得依据代码正文猜测语言;不得添加行号、复制按钮或运行时代码。着色只能包裹原字符,代码块的全部可见文本仍须通过正文等价校验。

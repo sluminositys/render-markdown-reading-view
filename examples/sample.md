@@ -92,8 +92,9 @@ $$
 ## 代码块
 
 ```python
-def render(source: str) -> str:
-    return source  # visible text stays unchanged
+def render(source: str, retries: int = 2) -> str:
+    message = "visible text stays unchanged"
+    return source if retries >= 0 else message
 ```
 
 ## 图片与图注
