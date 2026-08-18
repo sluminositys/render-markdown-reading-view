@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="und">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>阅读视图验收样稿</title>
+  <style>
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --ink: #1f2329;
+  --ink-2: #51565d;
+  --ink-3: #8a9099;
+  --accent: #2e5be6;
+  --hairline: #e9ebee;
+  --hairline-2: #f1f2f4;
+  --chip-bg: #f2f3f5;
+  --caution: #d13438;
+  --caution-bg: #fdf4f4;
+  --note: #2e5be6;
+  --note-bg: #f2f5fd;
+  --tip: #1a7f37;
+  --tip-bg: #f2faf4;
+  --code-bg: #f7f8f9;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1d21;
+    --ink: #e6e8eb;
+    --ink-2: #a5abb4;
+    --ink-3: #6f757e;
+    --accent: #6c8dff;
+    --hairline: #33363c;
+    --hairline-2: #2a2d32;
+    --chip-bg: #2a2d33;
+    --caution: #ff7a7d;
+    --caution-bg: #2a2224;
+    --note: #7d9bff;
+    --note-bg: #21252f;
+    --tip: #5fd382;
+    --tip-bg: #1f2a23;
+    --code-bg: #22252a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, "PingFang SC", "MiSans", "HarmonyOS Sans SC",
+    "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.9;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.reading-view {
+  box-sizing: content-box;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 56px 28px 96px;
+  overflow-wrap: anywhere;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--ink);
+}
+
+h1 {
+  margin: 0 0 0.85em;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.018em;
+}
+
+h2 {
+  margin: 2.6em 0 0.7em;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: -0.008em;
+}
+
+h3,
+h4,
+h5,
+h6,
+.heading-depth-3 {
+  margin: 2em 0 0.62em;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+p,
+.image-paragraph {
+  margin: 0.9em 0;
+}
+
+.lede {
+  color: var(--ink-2);
+}
+
+strong {
+  font-weight: 600;
+}
+
+em {
+  color: var(--ink-2);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+hr {
+  height: 1px;
+  margin: 2.5em 0;
+  border: 0;
+  background: var(--hairline);
+}
+
+blockquote {
+  margin: 1.35em 0;
+}
+
+blockquote p:first-child {
+  margin-top: 0;
+}
+
+blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.quiet-quote {
+  padding: 0.78em 1.05em;
+  border-left: 2px solid var(--hairline);
+  background: var(--hairline-2);
+  color: var(--ink-2);
+}
+
+.admonition {
+  padding: 0.82em 1.1em 0.88em;
+  border-left: 3px solid;
+  border-radius: 0 10px 10px 0;
+}
+
+.admonition::before {
+  content: attr(data-label);
+  display: block;
+  margin-bottom: 0.32em;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+}
+
+.admonition-caution {
+  border-left-color: var(--caution);
+  background: var(--caution-bg);
+}
+
+.admonition-caution::before {
+  color: var(--caution);
+}
+
+.admonition-note {
+  border-left-color: var(--note);
+  background: var(--note-bg);
+}
+
+.admonition-note::before {
+  color: var(--note);
+}
+
+.admonition-tip {
+  border-left-color: var(--tip);
+  background: var(--tip-bg);
+}
+
+.admonition-tip::before {
+  color: var(--tip);
+}
+
+ul,
+ol {
+  margin: 0.9em 0;
+  padding-left: 1.55em;
+}
+
+li {
+  margin: 0.32em 0;
+  padding-left: 0.18em;
+}
+
+li::marker {
+  color: var(--ink-3);
+}
+
+.status-list,
+.definition-list {
+  padding-left: 0;
+  list-style: none;
+}
+
+.status-list > li {
+  padding: 0.22em 0;
+}
+
+.definition-list > li {
+  padding: 0.46em 0;
+  border-bottom: 1px solid var(--hairline-2);
+}
+
+.definition-list > li:last-child {
+  border-bottom: 0;
+}
+
+.definition-list > li > strong:first-child,
+.definition-list > li > p:first-child > strong:first-child {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+code,
+pre {
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+}
+
+.inline-code,
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.13em 0.48em;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  font-size: 12.5px;
+  line-height: 1.55;
+  vertical-align: 0.02em;
+}
+
+.file-chip::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-right: 0.42em;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.file-ext-py::before {
+  background: #3776ab;
+}
+
+.file-ext-js::before {
+  background: #d6b900;
+}
+
+.file-ext-ts::before {
+  background: #3178c6;
+}
+
+.file-ext-md::before {
+  background: #5b7083;
+}
+
+.file-ext-go::before {
+  background: #00add8;
+}
+
+.file-ext-rs::before {
+  background: #b7410e;
+}
+
+.file-ext-java::before {
+  background: #e76f00;
+}
+
+.file-ext-sh::before {
+  background: #4eaa25;
+}
+
+.file-ext-json::before {
+  background: #8b7f00;
+}
+
+.file-ext-yaml::before {
+  background: #cb171e;
+}
+
+.file-ext-css::before {
+  background: #264de4;
+}
+
+.file-ext-html::before {
+  background: #e34f26;
+}
+
+pre {
+  margin: 1.45em 0;
+  padding: 1.05em 1.15em;
+  overflow: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--code-bg);
+  font-size: 13px;
+  line-height: 1.65;
+  tab-size: 4;
+  white-space: pre;
+}
+
+pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+}
+
+.table-wrap {
+  max-width: 100%;
+  margin: 1.45em 0;
+  overflow-x: auto;
+  border-top: 1px solid var(--hairline);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+th,
+td {
+  padding: 0.7em 0.78em;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+th:first-child,
+td:first-child {
+  padding-left: 0;
+  font-weight: 600;
+}
+
+th:last-child,
+td:last-child {
+  padding-right: 0;
+}
+
+td.numeric-column {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.reading-figure {
+  display: block;
+  margin: 1.55em 0;
+}
+
+.reading-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+
+figcaption {
+  margin-top: 0.58em;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+@page {
+  margin: 16mm;
+}
+
+@media print {
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --ink: #000000;
+    --ink-2: #292929;
+    --ink-3: #5c5c5c;
+    --accent: #000000;
+    --hairline: #bdbdbd;
+    --hairline-2: #eeeeee;
+    --chip-bg: #eeeeee;
+    --caution: #000000;
+    --caution-bg: #f3f3f3;
+    --note: #000000;
+    --note-bg: #f3f3f3;
+    --tip: #000000;
+    --tip-bg: #f3f3f3;
+    --code-bg: #f5f5f5;
+  }
+
+  body {
+    background: #ffffff;
+    color: #000000;
+    font-size: 10.5pt;
+    -webkit-print-color-adjust: economy;
+    print-color-adjust: economy;
+  }
+
+  .reading-view {
+    max-width: none;
+    padding: 0;
+  }
+
+  a,
+  a:hover {
+    color: #000000;
+    text-decoration: underline;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    break-after: avoid;
+  }
+
+  .admonition,
+  .quiet-quote,
+  pre,
+  .table-wrap,
+  .reading-figure {
+    break-inside: avoid;
+  }
+
+  .file-chip::before {
+    background: #5c5c5c;
+  }
+}
+  </style>
+</head>
+<body>
+<main class="reading-view">
+<h1>阅读视图验收样稿</h1>
+<p class="lede">这是一段保持原样的导语，包含 emoji ✨、英文 Markdown 和作者故意留下的错别字：清淅。</p>
+<h2>标题层级</h2>
+<p>二级标题建立主要章节，下面继续检查更深的层级。</p>
+<h3>三级标题</h3>
+<p>三级标题保持紧凑而清楚。</p>
+<h4 class="heading-depth-3">四级标题按三级标题样式呈现</h4>
+<p>标题文字和语义层级仍然保留。</p>
+<h2>引用与警示块</h2>
+<blockquote class="admonition admonition-caution" data-label="CAUTION" aria-label="CAUTION">
+<p>删除产物前，确认 Markdown 源文件仍然存在。</p>
+</blockquote>
+<blockquote class="admonition admonition-caution" data-label="WARNING" aria-label="WARNING">
+<p>HTML 是可再生的阅读产物，不是新的事实源。</p>
+</blockquote>
+<blockquote class="admonition admonition-note" data-label="NOTE" aria-label="NOTE">
+<p>主题样式被内联进单文件 HTML。</p>
+</blockquote>
+<blockquote class="admonition admonition-note" data-label="IMPORTANT" aria-label="IMPORTANT">
+<p>文本等价校验在每次渲染时强制执行。</p>
+</blockquote>
+<blockquote class="admonition admonition-tip" data-label="TIP" aria-label="TIP">
+<p>直接在浏览器中打开生成的 HTML 即可阅读。</p>
+</blockquote>
+<blockquote class="quiet-quote">
+<p>普通引用保持安静，不抢正文的注意力。</p>
+</blockquote>
+<h2>列表映射</h2>
+<h3>状态清单</h3>
+<ul class="status-list">
+<li>✅ 文本等价校验已启用</li>
+<li>⚠️ 相对图片路径仍需随文件一起提供</li>
+<li>🔴 原始 Markdown 不可被覆盖</li>
+<li>❌ 禁止手工修补 HTML 正文</li>
+</ul>
+<h3>定义式条目</h3>
+<ul class="definition-list">
+<li><strong>输入</strong>:已有的 UTF-8 Markdown 文件</li>
+<li><strong>输出</strong>： 同目录下同名的单文件 HTML</li>
+<li><strong>依赖</strong>: <code class="inline-code">markdown-it-py</code></li>
+</ul>
+<h3>普通清单</h3>
+<ul class="plain-list">
+<li>普通列表保留标准项目符号</li>
+<li>混合内容不会获得额外语义样式</li>
+</ul>
+<h3>混合 glyph 反例</h3>
+<ul class="plain-list">
+<li>✅ 这一项看起来像状态</li>
+<li>这一项没有状态 glyph，因此整个列表必须保持普通样式</li>
+</ul>
+<h3>部分定义式反例</h3>
+<ul class="plain-list">
+<li><strong>负责人</strong>:林舟</li>
+<li>截止时间:周五</li>
+</ul>
+<h2>行内元素</h2>
+<p>已知文件 <code class="file-chip file-ext-py">scripts/render.py</code>、<code class="file-chip file-ext-md">README.md</code> 和未知扩展名路径 <code class="file-chip file-ext-unknown">/var/cache/archive.bin</code> 使用文件胶囊；<code class="inline-code">archive.bin</code> 与 <code class="inline-code">render</code> 使用普通行内 code。这里还有一个<a href="https://example.com">项目链接</a>、<strong>粗体内容</strong>和<em>斜体内容</em>。</p>
+<hr />
+<h2>表格</h2>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th style="text-align:right">数量</th>
+<th style="text-align:right">完成率</th>
+<th style="text-align:right">预算</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>解析</td>
+<td style="text-align:right" class="numeric-column">12</td>
+<td style="text-align:right" class="numeric-column">95%</td>
+<td style="text-align:right" class="numeric-column">¥1,200</td>
+<td>稳定</td>
+</tr>
+<tr>
+<td>渲染</td>
+<td style="text-align:right" class="numeric-column">8</td>
+<td style="text-align:right" class="numeric-column">100%</td>
+<td style="text-align:right" class="numeric-column">¥800</td>
+<td>稳定</td>
+</tr>
+<tr>
+<td>校验</td>
+<td style="text-align:right" class="numeric-column">3</td>
+<td style="text-align:right" class="numeric-column">100%</td>
+<td style="text-align:right" class="numeric-column">¥300</td>
+<td>强制</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2>代码块</h2>
+<pre><code>def render(source: str) -&gt; str:
+    return source  # visible text stays unchanged
+</code></pre>
+<h2>图片与图注</h2>
+<div class="image-paragraph"><figure class="reading-figure"><img src="sample-figure.svg" alt="阅读视图示意图" class="reading-image"><figcaption>阅读视图示意图</figcaption></figure></div>
+<div class="image-paragraph"><figure class="reading-figure"><img src="sample-figure.svg" alt="" class="reading-image"></figure></div>
+<p>最后一段仍然只是作者写下的最后一段。</p>
+</main>
+</body>
+</html>
