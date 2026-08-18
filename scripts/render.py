@@ -8,6 +8,7 @@ import difflib
 import hashlib
 import re
 import sys
+import unicodedata
 from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
@@ -18,8 +19,13 @@ from latex2mathml.converter import convert as latex_to_mathml
 from markdown_it import MarkdownIt
 from markdown_it.common.utils import escapeHtml
 from markdown_it.renderer import RendererHTML
+from markdown_it.rules_core import StateCore
 from markdown_it.token import Token
+from mdit_py_plugins.deflist import deflist_plugin
 from mdit_py_plugins.dollarmath import dollarmath_plugin
+from mdit_py_plugins.footnote import footnote_plugin
+from mdit_py_plugins.front_matter import front_matter_plugin
+from mdit_py_plugins.texmath import texmath_plugin
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
@@ -29,10 +35,13 @@ from pygments.util import ClassNotFound
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 THEME_PATH = SKILL_ROOT / "assets" / "theme.css"
 
-ADMONITION_RE = re.compile(
-    r"^\[!(CAUTION|WARNING|NOTE|IMPORTANT|TIP)\](?:\n|$)"
-)
+ADMONITION_RE = re.compile(r"^\[!(CAUTION|WARNING|NOTE|IMPORTANT|TIP)\](?:\n|$)")
 DEFINITION_ITEM_RE = re.compile(r"^\*\*(?=\S)([^*\n]+?)\*\*[:：][ \t]?\S")
+TASK_ITEM_RE = re.compile(r"^\[([ xX])\](?:[ \t]+|$)")
+BARE_URL_RE = re.compile(
+    r"https?://[^\s<>\"'`*、，。；：！？）】》」』]+",
+    re.IGNORECASE,
+)
 FILE_SUFFIX_RE = re.compile(r"\.([A-Za-z0-9]+)$")
 WHITESPACE_RE = re.compile(r"\s+", re.UNICODE)
 MATH_ANNOTATION_ENCODING = "application/x-tex"
@@ -174,6 +183,9 @@ KNOWN_EXTENSIONS = {
     "html",
 }
 
+SAFE_HTML_PAIRED_TAGS = {"details", "kbd", "mark", "sub", "summary", "sup"}
+SAFE_HTML_VOID_TAGS = {"br"}
+
 CURRENCY_SYMBOLS = r"\$€£¥￥₩₹"
 CURRENCY_CODES = r"USD|CNY|RMB|EUR|GBP|JPY|KRW|INR"
 NUMBER_CORE = r"[+-]?(?:\d+(?:[,_ ]\d{3})*(?:\.\d+)?|\.\d+)"
@@ -202,11 +214,121 @@ RULE_NAMES = {
     16: "base-style",
     17: "inline-math",
     18: "display-math",
+    19: "front-matter",
+    20: "task-item",
+    21: "strikethrough",
+    22: "footnote",
+    23: "auto-link",
+    24: "heading-anchor",
+    25: "bracket-math",
+    26: "term-definition",
+    27: "inline-image",
+    28: "safe-html",
 }
 
 
 class RenderError(RuntimeError):
     """A safe rendering failure that must not produce a new HTML file."""
+
+
+class SafeHtmlSanitizer(HTMLParser):
+    """Render a tiny HTML allowlist and visibly escape everything else."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.parts: list[str] = []
+        self.syntax_count = 0
+
+    def _original_start_tag(self, tag: str) -> str:
+        return self.get_starttag_text() or f"<{tag}>"
+
+    @staticmethod
+    def _details_attributes_are_safe(
+        attrs: list[tuple[str, str | None]],
+    ) -> bool:
+        return not attrs or (
+            len(attrs) == 1
+            and attrs[0][0].lower() == "open"
+            and attrs[0][1] in {None, "", "open"}
+        )
+
+    def _safe_start_tag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+        *,
+        self_closing: bool,
+    ) -> str | None:
+        tag = tag.lower()
+        if tag in SAFE_HTML_VOID_TAGS and not attrs:
+            return "<br>"
+        if self_closing or tag not in SAFE_HTML_PAIRED_TAGS:
+            return None
+        if tag == "details":
+            if not self._details_attributes_are_safe(attrs):
+                return None
+            return "<details open>" if attrs else "<details>"
+        if attrs:
+            return None
+        return f"<{tag}>"
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        rendered = self._safe_start_tag(tag, attrs, self_closing=False)
+        if rendered is None:
+            self.parts.append(escapeHtml(self._original_start_tag(tag)))
+            return
+        self.syntax_count += 1
+        self.parts.append(rendered)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        rendered = self._safe_start_tag(tag, attrs, self_closing=True)
+        if rendered is None:
+            self.parts.append(escapeHtml(self._original_start_tag(tag)))
+            return
+        self.syntax_count += 1
+        self.parts.append(rendered)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in SAFE_HTML_PAIRED_TAGS:
+            self.syntax_count += 1
+            self.parts.append(f"</{tag}>")
+        else:
+            self.parts.append(escapeHtml(f"</{tag}>"))
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(escapeHtml(data))
+
+    def handle_entityref(self, name: str) -> None:
+        self.parts.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        self.parts.append(f"&#{name};")
+
+    def handle_comment(self, data: str) -> None:
+        del data
+        self.syntax_count += 1
+
+    def handle_decl(self, decl: str) -> None:
+        self.parts.append(escapeHtml(f"<!{decl}>"))
+
+    def handle_pi(self, data: str) -> None:
+        self.parts.append(escapeHtml(f"<?{data}>"))
+
+    def unknown_decl(self, data: str) -> None:
+        self.parts.append(escapeHtml(f"<![{data}]>"))
+
+    @property
+    def html(self) -> str:
+        return "".join(self.parts)
+
+
+def sanitize_html(source: str) -> tuple[str, int]:
+    """Return safe deterministic HTML and the consumed syntax-token count."""
+    sanitizer = SafeHtmlSanitizer()
+    sanitizer.feed(source)
+    sanitizer.close()
+    return sanitizer.html, sanitizer.syntax_count
 
 
 def math_placeholder(index: int) -> str:
@@ -233,12 +355,9 @@ def validate_mathml(root: ElementTree.Element, display: str) -> None:
     for element in root.iter():
         namespace, local_name = xml_name(element.tag)
         if element is not root and (
-            namespace != MATHML_NAMESPACE
-            or local_name not in ALLOWED_MATHML_ELEMENTS
+            namespace != MATHML_NAMESPACE or local_name not in ALLOWED_MATHML_ELEMENTS
         ):
-            raise RenderError(
-                f"math converter returned unsafe element: {local_name}"
-            )
+            raise RenderError(f"math converter returned unsafe element: {local_name}")
         for attribute_name in element.attrib:
             attribute_namespace, attribute_local_name = xml_name(attribute_name)
             if (
@@ -269,9 +388,7 @@ class VisibleTextParser(HTMLParser):
         self._code_capture = False
         self._code_parts: list[str] = []
 
-    def handle_starttag(
-        self, tag: str, attrs: list[tuple[str, str | None]]
-    ) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in self.IGNORED_ELEMENTS:
             self._ignored_depth += 1
             return
@@ -392,6 +509,59 @@ def render_fenced_code(source: str, info: str) -> tuple[str, bool]:
 class ReadingViewRenderer(RendererHTML):
     """HTML renderer for the syntax-only reading-view mappings."""
 
+    def front_matter(
+        self,
+        tokens: Sequence[Token],
+        idx: int,
+        options: dict[str, Any],
+        env: dict[str, Any],
+    ) -> str:
+        del options, env
+        content = escapeHtml(tokens[idx].content)
+        return f'<pre class="front-matter"><code>{content}</code></pre>\n'
+
+    def task_checkbox(
+        self,
+        tokens: Sequence[Token],
+        idx: int,
+        options: dict[str, Any],
+        env: dict[str, Any],
+    ) -> str:
+        del options, env
+        checked = bool(tokens[idx].meta.get("checked"))
+        state_class = " is-checked" if checked else ""
+        aria_checked = "true" if checked else "false"
+        return (
+            f'<span class="task-checkbox{state_class}" role="checkbox" '
+            f'aria-checked="{aria_checked}" aria-disabled="true"></span>'
+        )
+
+    def html_inline(
+        self,
+        tokens: Sequence[Token],
+        idx: int,
+        options: dict[str, Any],
+        env: dict[str, Any],
+    ) -> str:
+        del options, env
+        rendered, _ = sanitize_html(tokens[idx].content)
+        return rendered
+
+    def html_block(
+        self,
+        tokens: Sequence[Token],
+        idx: int,
+        options: dict[str, Any],
+        env: dict[str, Any],
+    ) -> str:
+        del options, env
+        rendered, safe_count = sanitize_html(tokens[idx].content)
+        if not rendered.strip():
+            return ""
+        if safe_count:
+            return rendered
+        return f'<div class="html-block">{rendered.rstrip()}</div>\n'
+
     def code_inline(
         self,
         tokens: Sequence[Token],
@@ -404,9 +574,7 @@ class ReadingViewRenderer(RendererHTML):
         value = escapeHtml(token.content)
         if token.meta.get("file_chip"):
             extension = token.meta["file_extension"]
-            return (
-                f'<code class="file-chip file-ext-{extension}">{value}</code>'
-            )
+            return f'<code class="file-chip file-ext-{extension}">{value}</code>'
         return f'<code class="inline-code">{value}</code>'
 
     def fence(
@@ -457,12 +625,73 @@ class ReadingViewRenderer(RendererHTML):
         token = tokens[idx]
         alt = self.renderInlineAsText(token.children, options, env)
         token.attrSet("alt", alt)
-        token.attrJoin("class", "reading-image")
+        image_mode = token.meta.get("image_mode", "block")
+        figure_class = "reading-figure"
+        image_class = "reading-image"
+        if image_mode == "inline":
+            figure_class += " reading-figure-inline"
+            image_class += " reading-image-inline"
+        token.attrJoin("class", image_class)
         image_html = f"<img{self.renderAttrs(token)}>"
-        caption = (
-            f"<figcaption>{escapeHtml(alt)}</figcaption>" if alt else ""
+        caption = f"<figcaption>{escapeHtml(alt)}</figcaption>" if alt else ""
+        return f'<figure class="{figure_class}">{image_html}{caption}</figure>'
+
+    def footnote_ref(
+        self,
+        tokens: Sequence[Token],
+        idx: int,
+        options: dict[str, Any],
+        env: dict[str, Any],
+    ) -> str:
+        del options
+        token = tokens[idx]
+        number = str(token.meta["id"] + 1)
+        prefix = f'-{env["docId"]}-' if isinstance(env.get("docId"), str) else ""
+        anchor_name = prefix + number
+        sub_id = int(token.meta.get("subId", 0))
+        reference_id = anchor_name + (f":{sub_id}" if sub_id else "")
+        caption = number + (f":{sub_id}" if sub_id else "")
+        return (
+            '<sup class="footnote-ref">'
+            f'<a href="#fn{anchor_name}" id="fnref{reference_id}" '
+            f'data-footnote-index="{caption}" aria-label="Footnote {caption}"></a>'
+            "</sup>"
         )
-        return f'<figure class="reading-figure">{image_html}{caption}</figure>'
+
+    def footnote_reference_open(
+        self,
+        tokens: Sequence[Token],
+        idx: int,
+        options: dict[str, Any],
+        env: dict[str, Any],
+    ) -> str:
+        del options
+        token = tokens[idx]
+        label = str(token.meta["label"])
+        footnotes = env.get("footnotes", {})
+        reference_id = footnotes.get("refs", {}).get(f":{label}", -1)
+        if isinstance(reference_id, int) and reference_id >= 0:
+            number = str(reference_id + 1)
+            identifier = number
+        else:
+            number = label
+            identifier = f"label-{heading_slug(label)}"
+        prefix = f'-{env["docId"]}-' if isinstance(env.get("docId"), str) else ""
+        anchor_name = prefix + identifier
+        return (
+            f'<aside id="fn{escapeHtml(anchor_name)}" class="footnote-definition" '
+            f'data-footnote-index="{escapeHtml(number)}">'
+        )
+
+    def footnote_reference_close(
+        self,
+        tokens: Sequence[Token],
+        idx: int,
+        options: dict[str, Any],
+        env: dict[str, Any],
+    ) -> str:
+        del tokens, idx, options, env
+        return "</aside>\n"
 
     def table_open(
         self,
@@ -472,10 +701,7 @@ class ReadingViewRenderer(RendererHTML):
         env: dict[str, Any],
     ) -> str:
         del options, env
-        return (
-            '<div class="table-wrap">\n'
-            f"<table{self.renderAttrs(tokens[idx])}>\n"
-        )
+        return '<div class="table-wrap">\n' f"<table{self.renderAttrs(tokens[idx])}>\n"
 
     def table_close(
         self,
@@ -488,18 +714,81 @@ class ReadingViewRenderer(RendererHTML):
         return "</table>\n</div>\n"
 
 
+def bare_url_tokens(text: str, parser: MarkdownIt) -> list[Token]:
+    """Split plain text into exact-text tokens and conservative HTTP links."""
+    output: list[Token] = []
+    cursor = 0
+    for match in BARE_URL_RE.finditer(text):
+        raw_match = match.group(0)
+        url = raw_match.rstrip(".,;:!?)]}")
+        if not url or url in {"http://", "https://"}:
+            continue
+        start = match.start()
+        end = start + len(url)
+        if start > cursor:
+            plain = Token("text", "", 0)
+            plain.content = text[cursor:start]
+            output.append(plain)
+
+        opening = Token("link_open", "a", 1)
+        opening.attrSet("href", parser.normalizeLink(url))
+        opening.markup = "bare-url"
+        opening.info = "auto"
+        output.append(opening)
+
+        label = Token("text", "", 0)
+        label.content = url
+        output.append(label)
+
+        closing = Token("link_close", "a", -1)
+        closing.markup = "bare-url"
+        closing.info = "auto"
+        output.append(closing)
+        cursor = end
+
+    if cursor < len(text):
+        plain = Token("text", "", 0)
+        plain.content = text[cursor:]
+        output.append(plain)
+    return output or [Token("text", "", 0)]
+
+
+def bare_url_core_rule(state: StateCore) -> None:
+    """Link explicit HTTP(S) URLs after Markdown inline syntax is resolved."""
+    for block_token in state.tokens:
+        if block_token.type != "inline" or not block_token.children:
+            continue
+        children: list[Token] = []
+        link_depth = 0
+        for child in block_token.children:
+            if child.type == "link_open":
+                link_depth += 1
+                children.append(child)
+            elif child.type == "link_close":
+                children.append(child)
+                link_depth = max(0, link_depth - 1)
+            elif child.type == "text" and link_depth == 0:
+                children.extend(bare_url_tokens(child.content, state.md))
+            else:
+                children.append(child)
+        block_token.children = children
+
+
 def build_parser() -> MarkdownIt:
     """Create the one parser configuration used for rendering and auditing."""
     parser = MarkdownIt(
         "commonmark",
         {
             "breaks": False,
-            "html": False,
+            "html": True,
             "linkify": False,
             "typographer": False,
         },
         renderer_cls=ReadingViewRenderer,
-    ).enable("table")
+    ).enable(["table", "strikethrough"])
+    parser.use(front_matter_plugin)
+    parser.use(deflist_plugin)
+    parser.use(footnote_plugin, inline=False, move_to_end=False)
     parser.use(
         dollarmath_plugin,
         allow_labels=False,
@@ -508,8 +797,22 @@ def build_parser() -> MarkdownIt:
         allow_blank_lines=False,
         double_inline=False,
     )
+    parser.use(texmath_plugin, delimiters="brackets")
+    parser.block.ruler.disable("math_block_eqno")
+    parser.core.ruler.after("inline", "bare_url", bare_url_core_rule)
+    parser.add_render_rule("front_matter", ReadingViewRenderer.front_matter)
+    parser.add_render_rule("task_checkbox", ReadingViewRenderer.task_checkbox)
+    parser.add_render_rule("html_inline", ReadingViewRenderer.html_inline)
+    parser.add_render_rule("html_block", ReadingViewRenderer.html_block)
     parser.add_render_rule("math_inline", ReadingViewRenderer.math_inline)
     parser.add_render_rule("math_block", ReadingViewRenderer.math_block)
+    parser.add_render_rule("footnote_ref", ReadingViewRenderer.footnote_ref)
+    parser.add_render_rule(
+        "footnote_reference_open", ReadingViewRenderer.footnote_reference_open
+    )
+    parser.add_render_rule(
+        "footnote_reference_close", ReadingViewRenderer.footnote_reference_close
+    )
     return parser
 
 
@@ -517,8 +820,10 @@ def inline_plain_text(children: Sequence[Token] | None) -> str:
     """Extract author text from inline tokens without Markdown syntax."""
     parts: list[str] = []
     for token in children or []:
-        if token.type in {"text", "code_inline", "html_inline"}:
+        if token.type in {"text", "code_inline"}:
             parts.append(token.content)
+        elif token.type == "html_inline":
+            parts.append(sanitized_html_visible_text(token.content))
         elif token.type == "image":
             parts.append(inline_plain_text(token.children))
         elif token.type in MATH_TOKEN_TYPES:
@@ -534,8 +839,10 @@ def inline_audit_text(
     """Extract prose while replacing formulas with positional audit markers."""
     parts: list[str] = []
     for token in children or []:
-        if token.type in {"text", "code_inline", "html_inline"}:
+        if token.type in {"text", "code_inline"}:
             parts.append(token.content)
+        elif token.type == "html_inline":
+            parts.append(sanitized_html_visible_text(token.content))
         elif token.type == "image":
             parts.append(inline_audit_text(token.children, formula_sources))
         elif token.type in MATH_TOKEN_TYPES:
@@ -560,7 +867,14 @@ def markdown_audit_payload(tokens: Sequence[Token]) -> tuple[str, list[str]]:
             formula_index = len(formula_sources)
             formula_sources.append(token.content)
             parts.append(math_placeholder(formula_index))
-        elif token.type in {"fence", "code_block", "html_block"}:
+        elif token.type == "front_matter":
+            if token.content:
+                parts.append(token.content)
+        elif token.type == "html_block":
+            value = sanitized_html_visible_text(token.content)
+            if value:
+                parts.append(value)
+        elif token.type in {"fence", "code_block"}:
             if token.content:
                 parts.append(token.content)
     return "\n".join(parts), formula_sources
@@ -580,6 +894,12 @@ def parse_html_audit(html: str) -> VisibleTextParser:
     parser.feed(html)
     parser.close()
     return parser
+
+
+def sanitized_html_visible_text(source: str) -> str:
+    """Return the visible text produced by the safe raw-HTML projection."""
+    rendered, _ = sanitize_html(source)
+    return parse_html_audit(rendered).text
 
 
 def html_audit_payload(html: str) -> tuple[str, list[str]]:
@@ -677,10 +997,46 @@ def strip_admonition_marker(
         tokens[inline_index + 1].hidden = True
 
 
+def heading_slug(value: str) -> str:
+    """Create a stable Unicode heading id without changing visible text."""
+    normalized = unicodedata.normalize("NFKC", value).casefold().strip()
+    characters: list[str] = []
+    for character in normalized:
+        category = unicodedata.category(character)
+        if character.isspace() or character == "-":
+            characters.append("-")
+        elif (
+            character == "_"
+            or category[0] in {"L", "N"}
+            or category
+            in {
+                "Mc",
+                "Mn",
+            }
+        ):
+            characters.append(character)
+    return re.sub(r"-+", "-", "".join(characters)).strip("-") or "section"
+
+
 def annotate_headings(tokens: Sequence[Token], counts: Counter[int]) -> None:
     waiting_for_lede = False
+    slug_counts: Counter[str] = Counter()
     for index, token in enumerate(tokens):
         if token.type == "heading_open":
+            inline = tokens[index + 1] if index + 1 < len(tokens) else None
+            heading_text = (
+                inline_plain_text(inline.children)
+                if inline is not None and inline.type == "inline"
+                else ""
+            )
+            base_slug = heading_slug(heading_text)
+            duplicate_index = slug_counts[base_slug]
+            slug_counts[base_slug] += 1
+            slug = (
+                base_slug if duplicate_index == 0 else f"{base_slug}-{duplicate_index}"
+            )
+            token.attrSet("id", slug)
+            counts[24] += 1
             if token.tag == "h1":
                 counts[1] += 1
                 if token.level == 0:
@@ -742,9 +1098,28 @@ def annotate_blockquotes(tokens: Sequence[Token], counts: Counter[int]) -> None:
         token.attrSet("data-label", label)
         token.attrSet("aria-label", label)
         counts[rule_number] += 1
-        strip_admonition_marker(
-            tokens, direct_inline_index, f"[!{label}]"
-        )
+        strip_admonition_marker(tokens, direct_inline_index, f"[!{label}]")
+
+
+def annotate_task_item(item: Token, inline: Token) -> bool:
+    """Consume an explicit GFM task marker and attach static checkbox chrome."""
+    match = TASK_ITEM_RE.match(inline.content)
+    children = list(inline.children or [])
+    if not match or not children or children[0].type != "text":
+        return False
+    child_match = TASK_ITEM_RE.match(children[0].content)
+    if not child_match:
+        return False
+
+    checked = match.group(1).lower() == "x"
+    inline.content = inline.content[match.end() :]
+    children[0].content = children[0].content[child_match.end() :]
+    checkbox = Token("task_checkbox", "span", 0)
+    checkbox.meta = {"checked": checked}
+    children.insert(0, checkbox)
+    inline.children = children
+    item.attrJoin("class", "task-list-item")
+    return True
 
 
 def annotate_lists(tokens: Sequence[Token], counts: Counter[int]) -> None:
@@ -760,12 +1135,18 @@ def annotate_lists(tokens: Sequence[Token], counts: Counter[int]) -> None:
             and tokens[item_index].level == token.level + 1
         ]
         first_lines: list[str] = []
+        task_count = 0
         for item_index in item_indices:
             item_end = find_matching_close(tokens, item_index)
             inline = first_direct_inline(tokens, item_index, item_end)
+            if inline and annotate_task_item(tokens[item_index], inline):
+                task_count += 1
             first_lines.append(inline.content if inline else "")
 
-        if first_lines and all(
+        if task_count:
+            token.attrJoin("class", "task-list")
+            counts[20] += task_count
+        elif first_lines and all(
             line.startswith(STATUS_GLYPHS) for line in first_lines
         ):
             token.attrJoin("class", "status-list")
@@ -833,19 +1214,47 @@ def annotate_tables(tokens: Sequence[Token], counts: Counter[int]) -> None:
                 cell.attrJoin("class", "numeric-column")
 
 
+def image_is_standalone(children: Sequence[Token], image_index: int) -> bool:
+    """Return true only for a paragraph containing one optional linked image."""
+    meaningful = [
+        (index, child)
+        for index, child in enumerate(children)
+        if not (
+            child.type in {"softbreak", "hardbreak"}
+            or (child.type == "text" and not child.content.strip())
+        )
+    ]
+    if len(meaningful) == 1:
+        return meaningful[0][0] == image_index and meaningful[0][1].type == "image"
+    return (
+        len(meaningful) == 3
+        and [child.type for _, child in meaningful]
+        == ["link_open", "image", "link_close"]
+        and meaningful[1][0] == image_index
+    )
+
+
 def annotate_inline_rules(tokens: Sequence[Token], counts: Counter[int]) -> None:
     for index, token in enumerate(tokens):
-        if token.type == "fence":
+        if token.type == "front_matter":
+            counts[19] += 1
+        elif token.type == "dl_open":
+            counts[26] += 1
+        elif token.type == "html_block":
+            _, safe_count = sanitize_html(token.content)
+            counts[28] += safe_count
+        elif token.type == "fence":
             counts[14] += 1
         elif token.type == "hr":
             counts[16] += 1
         elif token.type in {"math_block", "math_block_label"}:
-            counts[18] += 1
+            counts[25 if token.markup == r"\[" else 18] += 1
         if token.type != "inline":
             continue
 
         has_image = False
-        for child in token.children or []:
+        children = list(token.children or [])
+        for child_index, child in enumerate(children):
             if child.type == "code_inline":
                 suffix = FILE_SUFFIX_RE.search(child.content)
                 known_suffix = (
@@ -861,20 +1270,31 @@ def annotate_inline_rules(tokens: Sequence[Token], counts: Counter[int]) -> None
                     counts[12] += 1
             elif child.type == "image":
                 has_image = True
-                counts[15] += 1
+                if image_is_standalone(children, child_index):
+                    child.meta["image_mode"] = "block"
+                    counts[15] += 1
+                else:
+                    child.meta["image_mode"] = "inline"
+                    counts[27] += 1
             elif child.type in {"math_inline", "math_inline_double"}:
-                counts[17] += 1
-            elif child.type in {"link_open", "strong_open", "em_open"}:
+                counts[25 if child.markup == r"\(" else 17] += 1
+            elif child.type == "link_open":
+                counts[23 if child.markup == "bare-url" else 16] += 1
+            elif child.type in {"strong_open", "em_open"}:
                 counts[16] += 1
+            elif child.type == "s_open":
+                counts[21] += 1
+            elif child.type == "footnote_ref":
+                counts[22] += 1
+            elif child.type == "html_inline":
+                _, safe_count = sanitize_html(child.content)
+                counts[28] += safe_count
 
         if has_image and index and tokens[index - 1].type == "paragraph_open":
             paragraph_open = tokens[index - 1]
             paragraph_open.tag = "div"
             paragraph_open.attrJoin("class", "image-paragraph")
-            if (
-                index + 1 < len(tokens)
-                and tokens[index + 1].type == "paragraph_close"
-            ):
+            if index + 1 < len(tokens) and tokens[index + 1].type == "paragraph_close":
                 tokens[index + 1].tag = "div"
 
 
@@ -1001,9 +1421,7 @@ def format_report(counts: Counter[int]) -> str:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Render immutable Markdown as a self-contained HTML reading view."
-        )
+        description=("Render immutable Markdown as a self-contained HTML reading view.")
     )
     parser.add_argument("input", type=Path, help="UTF-8 .md file to render")
     return parser.parse_args(argv)

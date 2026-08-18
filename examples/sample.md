@@ -1,3 +1,8 @@
+---
+document: reading-view acceptance
+version: 2
+---
+
 # 阅读视图验收样稿
 
 这是一段保持原样的导语，包含 emoji ✨、英文 Markdown 和作者故意留下的错别字：清淅。
@@ -53,6 +58,12 @@
 - 普通列表保留标准项目符号
 - 混合内容不会获得额外语义样式
 
+### 任务清单
+
+- [x] 已完成的任务使用静态勾选框
+- [ ] 未完成的任务保持清楚可辨
+- 普通同级条目仍保留普通列表语义
+
 ### 混合 glyph 反例
 
 - ✅ 这一项看起来像状态
@@ -65,13 +76,17 @@
 
 ## 行内元素
 
-已知文件 `scripts/render.py`、`README.md` 和未知扩展名路径 `/var/cache/archive.bin` 使用文件胶囊；`archive.bin` 与 `render` 使用普通行内 code。这里还有一个[项目链接](https://example.com)、**粗体内容**和*斜体内容*。
+已知文件 `scripts/render.py`、`README.md` 和未知扩展名路径 `/var/cache/archive.bin` 使用文件胶囊；`archive.bin` 与 `render` 使用普通行内 code。这里还有一个[项目链接](https://example.com)、裸链接 https://example.com/docs、**粗体内容**、*斜体内容*和~~删除内容~~。
+
+[跳转到数学公式](#数学公式)用于检查确定性标题锚点。
 
 ---
 
 ## 数学公式
 
 行内公式 $E = mc^2$ 与 $a^2 + b^2 = c^2$ 跟随正文基线排版。
+
+括号定界的行内公式 \(e^{i\pi} + 1 = 0\) 使用同一排版系统。
 
 $$
 x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
@@ -81,6 +96,10 @@ $$
 \operatorname{softmax}(z_i) = \frac{e^{z_i}}{\sum_{j=1}^{K} e^{z_j}}
 $$
 
+\[
+\int_0^1 x^2\,dx = \frac{1}{3}
+\]
+
 ## 表格
 
 | 项目 | 数量 | 完成率 | 预算 | 备注 |
@@ -88,6 +107,14 @@ $$
 | 解析 | 12 | 95% | ¥1,200 | 稳定 |
 | 渲染 | 8 | 100% | ¥800 | 稳定 |
 | 校验 | 3 | 100% | ¥300 | 强制 |
+
+## 术语定义
+
+唯一事实源
+: Markdown 文件是唯一允许编辑的内容载体。
+
+阅读产物
+: HTML 可以随时删除并从 Markdown 重新生成。
 
 ## 代码块
 
@@ -97,10 +124,32 @@ def render(source: str, retries: int = 2) -> str:
     return source if retries >= 0 else message
 ```
 
+```mermaid
+graph TD
+  Markdown --> HTML
+```
+
 ## 图片与图注
 
 ![阅读视图示意图](sample-figure.svg)
 
 ![](sample-figure.svg)
+
+状态 ![内联状态图](sample-figure.svg) 保持在当前文字流中，不再扩张成整页图片。
+
+## 安全 HTML 子集
+
+<details open>
+<summary>可展开的补充说明</summary>
+
+按下 <kbd>Ctrl</kbd> 与 <kbd>K</kbd>，查看被 <mark>明确标记</mark> 的第 2<sup>项</sup> 内容。<br>换行仍然是静态 HTML。
+
+</details>
+
+<!-- 这是不会出现在阅读正文中的作者注释。 -->
+
+脚注引用使用确定性编号并保持正文来源不变。[^audit]
+
+[^audit]: 脚注正文仍然来自 Markdown，不由渲染器补写。
 
 最后一段仍然只是作者写下的最后一段。

@@ -99,6 +99,7 @@ h4,
 h5,
 h6 {
   color: var(--ink);
+  scroll-margin-top: 1.5em;
 }
 
 h1 {
@@ -143,6 +144,41 @@ strong {
 
 em {
   color: var(--ink-2);
+}
+
+s,
+del {
+  color: var(--ink-3);
+  text-decoration-color: currentColor;
+  text-decoration-thickness: 1.5px;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.65em;
+  padding: 0.08em 0.42em;
+  border: 1px solid var(--hairline);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--chip-bg);
+  color: var(--ink);
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  white-space: nowrap;
+}
+
+mark {
+  padding: 0.04em 0.18em;
+  border-radius: 3px;
+  background: var(--note-bg);
+  color: inherit;
+}
+
+sup,
+sub {
+  line-height: 0;
 }
 
 a {
@@ -264,6 +300,60 @@ li::marker {
   font-weight: 600;
 }
 
+.task-list {
+  padding-left: 1.55em;
+}
+
+.task-list-item {
+  position: relative;
+  list-style: none;
+}
+
+.task-checkbox {
+  position: absolute;
+  top: 0.64em;
+  left: -1.48em;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--ink-3);
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+.task-checkbox.is-checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.task-checkbox.is-checked::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 4px;
+  width: 3px;
+  height: 7px;
+  border: solid var(--bg);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+dl {
+  margin: 1.15em 0;
+}
+
+dt {
+  margin-top: 0.85em;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+dd {
+  margin: 0.22em 0 0.8em;
+  padding-left: 1em;
+  border-left: 2px solid var(--hairline);
+  color: var(--ink-2);
+}
+
 code,
 pre {
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
@@ -359,6 +449,18 @@ pre code {
   background: transparent;
   color: inherit;
   font-size: inherit;
+}
+
+.front-matter {
+  margin: 0 0 2.15em;
+  padding: 0.78em 1em;
+  border-color: var(--hairline-2);
+  border-radius: 8px;
+  background: var(--hairline-2);
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
 }
 
 .code-highlight .tok-c,
@@ -509,6 +611,70 @@ math annotation {
   font-size: 1.1em;
 }
 
+.html-block {
+  margin: 1.15em 0;
+}
+
+details {
+  margin: 1.25em 0;
+  padding: 0.72em 0.95em;
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  background: var(--hairline-2);
+}
+
+summary {
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+details[open] > summary {
+  margin-bottom: 0.52em;
+}
+
+details > :last-child {
+  margin-bottom: 0;
+}
+
+.footnote-definition {
+  position: relative;
+  margin: 1.1em 0;
+  padding: 0.18em 0 0.18em 2.5em;
+  border-left: 2px solid var(--hairline);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.footnote-definition::before {
+  content: "[" attr(data-footnote-index) "]";
+  position: absolute;
+  top: 0.18em;
+  left: 0.72em;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.footnote-definition > p:first-child {
+  margin-top: 0;
+}
+
+.footnote-definition > p:last-child {
+  margin-bottom: 0;
+}
+
+.footnote-ref {
+  margin-left: 0.08em;
+  font-size: 0.76em;
+  line-height: 0;
+  vertical-align: super;
+}
+
+.footnote-ref a::before {
+  content: "[" attr(data-footnote-index) "]";
+}
+
 .table-wrap {
   max-width: 100%;
   margin: 1.45em 0;
@@ -560,6 +726,15 @@ td.numeric-column {
   margin: 1.55em 0;
 }
 
+.reading-figure-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38em;
+  max-width: 100%;
+  margin: 0 0.14em;
+  vertical-align: -0.26em;
+}
+
 .reading-image {
   display: block;
   max-width: 100%;
@@ -567,6 +742,23 @@ td.numeric-column {
   margin: 0 auto;
   border: 1px solid var(--hairline);
   border-radius: 10px;
+}
+
+.reading-image-inline {
+  display: inline-block;
+  width: auto;
+  max-width: min(12em, 42vw);
+  max-height: 1.7em;
+  margin: 0;
+  border-radius: 4px;
+}
+
+.reading-figure-inline figcaption {
+  margin: 0;
+  font-size: 0.82em;
+  line-height: 1.35;
+  text-align: left;
+  white-space: nowrap;
 }
 
 figcaption {
@@ -641,6 +833,10 @@ figcaption {
 
   .admonition,
   .quiet-quote,
+  .front-matter,
+  .footnote-definition,
+  details,
+  dl,
   pre,
   .math-block,
   .table-wrap,
@@ -652,6 +848,10 @@ figcaption {
     overflow: visible;
   }
 
+  details:not([open]) > *:not(summary) {
+    display: block !important;
+  }
+
   .file-chip::before {
     background: #5c5c5c;
   }
@@ -660,15 +860,18 @@ figcaption {
 </head>
 <body>
 <main class="reading-view">
-<h1>阅读视图验收样稿</h1>
+<pre class="front-matter"><code>document: reading-view acceptance
+version: 2</code></pre>
+
+<h1 id="阅读视图验收样稿">阅读视图验收样稿</h1>
 <p class="lede">这是一段保持原样的导语，包含 emoji ✨、英文 Markdown 和作者故意留下的错别字：清淅。</p>
-<h2>标题层级</h2>
+<h2 id="标题层级">标题层级</h2>
 <p>二级标题建立主要章节，下面继续检查更深的层级。</p>
-<h3>三级标题</h3>
+<h3 id="三级标题">三级标题</h3>
 <p>三级标题保持紧凑而清楚。</p>
-<h4 class="heading-depth-3">四级标题按三级标题样式呈现</h4>
+<h4 id="四级标题按三级标题样式呈现" class="heading-depth-3">四级标题按三级标题样式呈现</h4>
 <p>标题文字和语义层级仍然保留。</p>
-<h2>引用与警示块</h2>
+<h2 id="引用与警示块">引用与警示块</h2>
 <blockquote class="admonition admonition-caution" data-label="CAUTION" aria-label="CAUTION">
 <p>删除产物前，确认 Markdown 源文件仍然存在。</p>
 </blockquote>
@@ -687,40 +890,48 @@ figcaption {
 <blockquote class="quiet-quote">
 <p>普通引用保持安静，不抢正文的注意力。</p>
 </blockquote>
-<h2>列表映射</h2>
-<h3>状态清单</h3>
+<h2 id="列表映射">列表映射</h2>
+<h3 id="状态清单">状态清单</h3>
 <ul class="status-list">
 <li>✅ 文本等价校验已启用</li>
 <li>⚠️ 相对图片路径仍需随文件一起提供</li>
 <li>🔴 原始 Markdown 不可被覆盖</li>
 <li>❌ 禁止手工修补 HTML 正文</li>
 </ul>
-<h3>定义式条目</h3>
+<h3 id="定义式条目">定义式条目</h3>
 <ul class="definition-list">
 <li><strong>输入</strong>:已有的 UTF-8 Markdown 文件</li>
 <li><strong>输出</strong>： 同目录下同名的单文件 HTML</li>
 <li><strong>依赖</strong>: <code class="inline-code">markdown-it-py</code></li>
 </ul>
-<h3>普通清单</h3>
+<h3 id="普通清单">普通清单</h3>
 <ul class="plain-list">
 <li>普通列表保留标准项目符号</li>
 <li>混合内容不会获得额外语义样式</li>
 </ul>
-<h3>混合 glyph 反例</h3>
+<h3 id="任务清单">任务清单</h3>
+<ul class="task-list">
+<li class="task-list-item"><span class="task-checkbox is-checked" role="checkbox" aria-checked="true" aria-disabled="true"></span>已完成的任务使用静态勾选框</li>
+<li class="task-list-item"><span class="task-checkbox" role="checkbox" aria-checked="false" aria-disabled="true"></span>未完成的任务保持清楚可辨</li>
+<li>普通同级条目仍保留普通列表语义</li>
+</ul>
+<h3 id="混合-glyph-反例">混合 glyph 反例</h3>
 <ul class="plain-list">
 <li>✅ 这一项看起来像状态</li>
 <li>这一项没有状态 glyph，因此整个列表必须保持普通样式</li>
 </ul>
-<h3>部分定义式反例</h3>
+<h3 id="部分定义式反例">部分定义式反例</h3>
 <ul class="plain-list">
 <li><strong>负责人</strong>:林舟</li>
 <li>截止时间:周五</li>
 </ul>
-<h2>行内元素</h2>
-<p>已知文件 <code class="file-chip file-ext-py">scripts/render.py</code>、<code class="file-chip file-ext-md">README.md</code> 和未知扩展名路径 <code class="file-chip file-ext-unknown">/var/cache/archive.bin</code> 使用文件胶囊；<code class="inline-code">archive.bin</code> 与 <code class="inline-code">render</code> 使用普通行内 code。这里还有一个<a href="https://example.com">项目链接</a>、<strong>粗体内容</strong>和<em>斜体内容</em>。</p>
+<h2 id="行内元素">行内元素</h2>
+<p>已知文件 <code class="file-chip file-ext-py">scripts/render.py</code>、<code class="file-chip file-ext-md">README.md</code> 和未知扩展名路径 <code class="file-chip file-ext-unknown">/var/cache/archive.bin</code> 使用文件胶囊；<code class="inline-code">archive.bin</code> 与 <code class="inline-code">render</code> 使用普通行内 code。这里还有一个<a href="https://example.com">项目链接</a>、裸链接 <a href="https://example.com/docs">https://example.com/docs</a>、<strong>粗体内容</strong>、<em>斜体内容</em>和<s>删除内容</s>。</p>
+<p><a href="#%E6%95%B0%E5%AD%A6%E5%85%AC%E5%BC%8F">跳转到数学公式</a>用于检查确定性标题锚点。</p>
 <hr />
-<h2>数学公式</h2>
+<h2 id="数学公式">数学公式</h2>
 <p>行内公式 <span class="math-inline"><math xmlns="http://www.w3.org/1998/Math/MathML" display="inline"><semantics><mrow><mi>E</mi><mo>=</mo><mi>m</mi><msup><mi>c</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">E = mc^2</annotation></semantics></math></span> 与 <span class="math-inline"><math xmlns="http://www.w3.org/1998/Math/MathML" display="inline"><semantics><mrow><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup><mo>=</mo><msup><mi>c</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">a^2 + b^2 = c^2</annotation></semantics></math></span> 跟随正文基线排版。</p>
+<p>括号定界的行内公式 <span class="math-inline"><math xmlns="http://www.w3.org/1998/Math/MathML" display="inline"><semantics><mrow><msup><mi>e</mi><mrow><mi>i</mi><mi>π</mi></mrow></msup><mo>+</mo><mn>1</mn><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">e^{i\pi} + 1 = 0</annotation></semantics></math></span> 使用同一排版系统。</p>
 <div class="math-block">
 <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>x</mi><mo>=</mo><mfrac><mrow><mo>−</mo><mi>b</mi><mi>±</mi><msqrt><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi></mrow></msqrt></mrow><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
 x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
@@ -731,7 +942,12 @@ x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
 \operatorname{softmax}(z_i) = \frac{e^{z_i}}{\sum_{j=1}^{K} e^{z_j}}
 </annotation></semantics></math>
 </div>
-<h2>表格</h2>
+<div class="math-block">
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msubsup><mo>∫</mo><mn>0</mn><mn>1</mn></msubsup><msup><mi>x</mi><mn>2</mn></msup><mspace width="0.167em" /><mi>d</mi><mi>x</mi><mo>=</mo><mfrac><mrow><mn>1</mn></mrow><mrow><mn>3</mn></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+\int_0^1 x^2\,dx = \frac{1}{3}
+</annotation></semantics></math>
+</div>
+<h2 id="表格">表格</h2>
 <div class="table-wrap">
 <table>
 <thead>
@@ -768,14 +984,33 @@ x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
 </tbody>
 </table>
 </div>
-<h2>代码块</h2>
+<h2 id="术语定义">术语定义</h2>
+<dl>
+<dt>唯一事实源</dt>
+<dd>Markdown 文件是唯一允许编辑的内容载体。</dd>
+<dt>阅读产物</dt>
+<dd>HTML 可以随时删除并从 Markdown 重新生成。</dd>
+</dl>
+<h2 id="代码块">代码块</h2>
 <pre class="code-block code-highlight"><code><span class="tok-k">def</span><span class="tok-w"> </span><span class="tok-nf">render</span><span class="tok-p">(</span><span class="tok-n">source</span><span class="tok-p">:</span> <span class="tok-nb">str</span><span class="tok-p">,</span> <span class="tok-n">retries</span><span class="tok-p">:</span> <span class="tok-nb">int</span> <span class="tok-o">=</span> <span class="tok-mi">2</span><span class="tok-p">)</span> <span class="tok-o">-&gt;</span> <span class="tok-nb">str</span><span class="tok-p">:</span>
     <span class="tok-n">message</span> <span class="tok-o">=</span> <span class="tok-s2">&quot;visible text stays unchanged&quot;</span>
     <span class="tok-k">return</span> <span class="tok-n">source</span> <span class="tok-k">if</span> <span class="tok-n">retries</span> <span class="tok-o">&gt;=</span> <span class="tok-mi">0</span> <span class="tok-k">else</span> <span class="tok-n">message</span>
 </code></pre>
-<h2>图片与图注</h2>
+<pre class="code-block code-plain"><code>graph TD
+  Markdown --&gt; HTML
+</code></pre>
+<h2 id="图片与图注">图片与图注</h2>
 <div class="image-paragraph"><figure class="reading-figure"><img src="sample-figure.svg" alt="阅读视图示意图" class="reading-image"><figcaption>阅读视图示意图</figcaption></figure></div>
 <div class="image-paragraph"><figure class="reading-figure"><img src="sample-figure.svg" alt="" class="reading-image"></figure></div>
+<div class="image-paragraph">状态 <figure class="reading-figure reading-figure-inline"><img src="sample-figure.svg" alt="内联状态图" class="reading-image reading-image-inline"><figcaption>内联状态图</figcaption></figure> 保持在当前文字流中，不再扩张成整页图片。</div>
+<h2 id="安全-html-子集">安全 HTML 子集</h2>
+<details open>
+<summary>可展开的补充说明</summary>
+<p>按下 <kbd>Ctrl</kbd> 与 <kbd>K</kbd>，查看被 <mark>明确标记</mark> 的第 2<sup>项</sup> 内容。<br>换行仍然是静态 HTML。</p>
+</details>
+<p>脚注引用使用确定性编号并保持正文来源不变。<sup class="footnote-ref"><a href="#fn1" id="fnref1" data-footnote-index="1" aria-label="Footnote 1"></a></sup></p>
+<aside id="fn1" class="footnote-definition" data-footnote-index="1"><p>脚注正文仍然来自 Markdown，不由渲染器补写。</p>
+</aside>
 <p>最后一段仍然只是作者写下的最后一段。</p>
 </main>
 </body>
