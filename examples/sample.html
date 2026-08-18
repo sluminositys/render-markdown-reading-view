@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>阅读视图验收样稿</title>
   <style>
-:root {
-  color-scheme: light dark;
+:root,
+:root[data-al-theme="light"] {
+  color-scheme: light;
   --bg: #ffffff;
   --ink: #1f2329;
   --ink-2: #51565d;
@@ -35,7 +36,8 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-al-theme]) {
+    color-scheme: dark;
     --bg: #1b1d21;
     --ink: #e6e8eb;
     --ink-2: #a5abb4;
@@ -62,6 +64,35 @@
     --syntax-meta: #d8b4fe;
     --syntax-error: #fda4af;
   }
+}
+
+:root[data-al-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1b1d21;
+  --ink: #e6e8eb;
+  --ink-2: #a5abb4;
+  --ink-3: #6f757e;
+  --accent: #6c8dff;
+  --hairline: #33363c;
+  --hairline-2: #2a2d32;
+  --chip-bg: #2a2d33;
+  --caution: #ff7a7d;
+  --caution-bg: #2a2224;
+  --note: #7d9bff;
+  --note-bg: #21252f;
+  --tip: #5fd382;
+  --tip-bg: #1f2a23;
+  --code-bg: #22252a;
+  --syntax-keyword: #c4b5fd;
+  --syntax-function: #93c5fd;
+  --syntax-string: #86efac;
+  --syntax-number: #fbbf24;
+  --syntax-comment: #8b949e;
+  --syntax-operator: #fda4af;
+  --syntax-builtin: #67e8f9;
+  --syntax-variable: #a5c8ff;
+  --syntax-meta: #d8b4fe;
+  --syntax-error: #fda4af;
 }
 
 * {

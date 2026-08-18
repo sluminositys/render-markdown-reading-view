@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import io
+import json
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from html.parser import HTMLParser
 from pathlib import Path
+from unittest import mock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +19,245 @@ if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"cannot load renderer from {RENDER_PATH}")
 render = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(render)
+
+VOID_HTML_TAGS = {
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "source",
+    "track",
+    "wbr",
+}
+
+
+class SourceMapNestingParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.stack: list[tuple[str, bool]] = []
+        self.active_blocks = 0
+        self.nested_blocks: list[str] = []
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        attributes = dict(attrs)
+        block_id = attributes.get("data-al-block")
+        if block_id is not None:
+            if self.active_blocks:
+                self.nested_blocks.append(block_id)
+            self.active_blocks += 1
+        if tag not in VOID_HTML_TAGS:
+            self.stack.append((tag, block_id is not None))
+
+    def handle_endtag(self, tag: str) -> None:
+        while self.stack:
+            opened_tag, is_block = self.stack.pop()
+            if is_block:
+                self.active_blocks -= 1
+            if opened_tag == tag:
+                break
+
+
+class RendererCliContractTests(unittest.TestCase):
+    def invoke(self, *arguments: str | Path) -> tuple[int, str, str]:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            exit_code = render.main([str(argument) for argument in arguments])
+        return exit_code, stdout.getvalue(), stderr.getvalue()
+
+    def test_explicit_output_report_and_source_map_are_deterministic(self) -> None:
+        source = (
+            "# Contract\n\n"
+            "A paragraph with $x^2$.\n\n"
+            "- first\n"
+            "- second\n\n"
+            "```python\n"
+            "print('unchanged')\n"
+            "```\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            markdown_path = root / "source.md"
+            output_path = root / "projection.html"
+            report_path = root / "report.json"
+            markdown_path.write_text(source, encoding="utf-8", newline="\n")
+            source_bytes = markdown_path.read_bytes()
+
+            exit_code, stdout, stderr = self.invoke(
+                markdown_path,
+                "--output",
+                output_path,
+                "--report-json",
+                report_path,
+                "--source-map",
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("rendered", stdout)
+            self.assertEqual(stderr, "")
+            self.assertFalse(markdown_path.with_suffix(".html").exists())
+            self.assertEqual(markdown_path.read_bytes(), source_bytes)
+
+            html_bytes = output_path.read_bytes()
+            report_bytes = report_path.read_bytes()
+            html = html_bytes.decode("utf-8")
+            report = json.loads(report_bytes)
+            self.assertEqual(report["schemaVersion"], 1)
+            self.assertEqual(
+                report["sourceSha256"], hashlib.sha256(source_bytes).hexdigest()
+            )
+            self.assertEqual(
+                report["outputSha256"], hashlib.sha256(html_bytes).hexdigest()
+            )
+            self.assertEqual(report["title"], "Contract")
+            self.assertEqual(report["rendererVersion"], render.RENDERER_VERSION)
+            self.assertEqual(report["blocks"][0], {
+                "id": "b000001",
+                "tag": "h1",
+                "sourceStartLine": 1,
+                "sourceEndLineExclusive": 2,
+            })
+            self.assertEqual(
+                html.count('data-al-block="'), len(report["blocks"])
+            )
+            self.assertEqual(html.count(render.HEAD_INJECTION_MARKER), 1)
+
+            nesting = SourceMapNestingParser()
+            nesting.feed(html)
+            self.assertEqual(nesting.nested_blocks, [])
+
+            second_exit, _, second_stderr = self.invoke(
+                markdown_path,
+                "--output",
+                output_path,
+                "--report-json",
+                report_path,
+                "--source-map",
+            )
+            self.assertEqual(second_exit, 0)
+            self.assertEqual(second_stderr, "")
+            self.assertEqual(output_path.read_bytes(), html_bytes)
+            self.assertEqual(report_path.read_bytes(), report_bytes)
+
+    def test_report_stdout_contains_only_one_json_line(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            markdown_path = root / "source.md"
+            output_path = root / "projection.html"
+            markdown_path.write_text("# Report\n", encoding="utf-8")
+
+            exit_code, stdout, stderr = self.invoke(
+                markdown_path,
+                "--output",
+                output_path,
+                "--report-json",
+                "-",
+                "--source-map",
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(stderr, "")
+            self.assertEqual(len(stdout.splitlines()), 1)
+            self.assertEqual(json.loads(stdout)["title"], "Report")
+
+    def test_render_failure_preserves_existing_explicit_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            markdown_path = root / "source.md"
+            output_path = root / "projection.html"
+            markdown_path.write_text("# Invalid\n\n$x_{$\n", encoding="utf-8")
+            output_path.write_bytes(b"existing projection\n")
+
+            exit_code, stdout, stderr = self.invoke(
+                markdown_path, "--output", output_path
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("render failed:", stderr)
+            self.assertEqual(output_path.read_bytes(), b"existing projection\n")
+            self.assertEqual(list(root.glob("projection.html.tmp-*")), [])
+
+    def test_source_change_during_commit_rolls_back_output_and_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            markdown_path = root / "source.md"
+            output_path = root / "projection.html"
+            report_path = root / "report.json"
+            markdown_path.write_text("# Race\n", encoding="utf-8")
+            output_path.write_bytes(b"previous html\n")
+            report_path.write_bytes(b"previous report\n")
+
+            source_changed = render.RenderError("source changed")
+            with mock.patch.object(
+                render,
+                "assert_source_unchanged",
+                side_effect=[None, None, source_changed],
+            ):
+                exit_code, stdout, stderr = self.invoke(
+                    markdown_path,
+                    "--output",
+                    output_path,
+                    "--report-json",
+                    report_path,
+                )
+
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("source changed", stderr)
+            self.assertEqual(output_path.read_bytes(), b"previous html\n")
+            self.assertEqual(report_path.read_bytes(), b"previous report\n")
+            self.assertEqual(list(root.glob("*.tmp-*")), [])
+
+    def test_input_cannot_be_used_as_output_or_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            markdown_path = Path(directory) / "source.md"
+            markdown_path.write_text("# Immutable\n", encoding="utf-8")
+            source_bytes = markdown_path.read_bytes()
+
+            output_exit, _, output_error = self.invoke(
+                markdown_path, "--output", markdown_path
+            )
+            report_exit, _, report_error = self.invoke(
+                markdown_path, "--report-json", markdown_path
+            )
+
+            self.assertEqual(output_exit, 1)
+            self.assertEqual(report_exit, 1)
+            self.assertIn("source Markdown", output_error)
+            self.assertIn("source Markdown", report_error)
+            self.assertEqual(markdown_path.read_bytes(), source_bytes)
+
+    def test_destination_parent_must_already_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            markdown_path = root / "source.md"
+            markdown_path.write_text("# Parent\n", encoding="utf-8")
+
+            exit_code, stdout, stderr = self.invoke(
+                markdown_path,
+                "--output",
+                root / "missing" / "projection.html",
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("parent directory does not exist", stderr)
+            self.assertFalse((root / "missing").exists())
+
+    def test_theme_supports_system_light_and_dark_overrides(self) -> None:
+        css = render.THEME_PATH.read_text(encoding="utf-8")
+        self.assertIn(':root[data-al-theme="light"]', css)
+        self.assertIn(':root[data-al-theme="dark"]', css)
+        self.assertIn("@media (prefers-color-scheme: dark)", css)
 
 
 class FormulaRenderingTests(unittest.TestCase):

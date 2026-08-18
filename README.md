@@ -35,6 +35,18 @@ The command creates `path/to/document.html`. It never writes back to the Markdow
 
 Open the generated file in any modern browser. CSS is inlined into the document; Markdown image paths remain relative by design, so referenced local images should travel with the HTML.
 
+Applications can choose an explicit destination and request a deterministic machine report:
+
+```bash
+python scripts/render.py input.md --output cache/output.html
+python scripts/render.py input.md --output cache/output.html --report-json cache/report.json --source-map
+python scripts/render.py input.md --output cache/output.html --report-json - --source-map
+```
+
+The caller creates destination directories. HTML and file-based reports are written through randomized same-directory temporary files and atomically replaced only after content audits and source-hash checks pass. `--report-json -` reserves stdout for exactly one JSON line and sends failures to stderr.
+
+The version-1 report contains source and output SHA-256 digests, the document title, renderer version, triggered rule counts, and source-map blocks. `--source-map` adds deterministic `data-al-block="b000001"` identifiers in final document order and 1-based, end-exclusive `data-source-lines="12:15"` ranges when the parser has reliable line data. These attributes are non-visible and do not alter the author-text audit.
+
 To inspect the complete component set:
 
 ```bash
@@ -119,6 +131,7 @@ The “every item” condition for enhanced lists is strict. One non-matching it
 - Single HTML file with the entire theme inlined
 - UTF-8 document and responsive viewport metadata
 - Automatic `prefers-color-scheme` dark mode
+- Optional `data-al-theme="light"` or `data-al-theme="dark"` override on the root element for embedding applications
 - Black-and-white-safe print stylesheet
 - Horizontal table overflow on narrow screens
 - Relative image sources preserved

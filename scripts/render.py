@@ -6,8 +6,11 @@ from __future__ import annotations
 import argparse
 import difflib
 import hashlib
+import json
+import os
 import re
 import sys
+import tempfile
 import unicodedata
 from collections import Counter
 from html.parser import HTMLParser
@@ -34,6 +37,9 @@ from pygments.util import ClassNotFound
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 THEME_PATH = SKILL_ROOT / "assets" / "theme.css"
+RENDERER_VERSION = "1.0.0"
+RENDERER_CLI_CONTRACT_VERSION = "1"
+HEAD_INJECTION_MARKER = "<head>\n"
 
 ADMONITION_RE = re.compile(r"^\[!(CAUTION|WARNING|NOTE|IMPORTANT|TIP)\](?:\n|$)")
 DEFINITION_ITEM_RE = re.compile(r"^\*\*(?=\S)([^*\n]+?)\*\*[:：][ \t]?\S")
@@ -226,9 +232,42 @@ RULE_NAMES = {
     28: "safe-html",
 }
 
+SOURCE_MAP_BLOCK_TAGS: dict[str, str | None] = {
+    "front_matter": "pre",
+    "heading_open": None,
+    "paragraph_open": None,
+    "blockquote_open": "blockquote",
+    "bullet_list_open": "ul",
+    "ordered_list_open": "ol",
+    "table_open": "table",
+    "dl_open": "dl",
+    "fence": "pre",
+    "code_block": "pre",
+    "math_block": "div",
+    "footnote_reference_open": "aside",
+}
+
 
 class RenderError(RuntimeError):
     """A safe rendering failure that must not produce a new HTML file."""
+
+
+class RenderResult:
+    """Committed renderer output and its deterministic machine report."""
+
+    __slots__ = ("output_path", "counts", "report", "report_json")
+
+    def __init__(
+        self,
+        output_path: Path,
+        counts: Counter[int],
+        report: dict[str, Any],
+        report_json: str,
+    ) -> None:
+        self.output_path = output_path
+        self.counts = counts
+        self.report = report
+        self.report_json = report_json
 
 
 class SafeHtmlSanitizer(HTMLParser):
@@ -506,6 +545,14 @@ def render_fenced_code(source: str, info: str) -> tuple[str, bool]:
         ) from error
 
 
+def add_token_class(token: Token, class_name: str) -> None:
+    """Add one CSS class to a token without duplicating existing classes."""
+    classes = (token.attrGet("class") or "").split()
+    if class_name not in classes:
+        classes.append(class_name)
+        token.attrSet("class", " ".join(classes))
+
+
 class ReadingViewRenderer(RendererHTML):
     """HTML renderer for the syntax-only reading-view mappings."""
 
@@ -517,8 +564,10 @@ class ReadingViewRenderer(RendererHTML):
         env: dict[str, Any],
     ) -> str:
         del options, env
-        content = escapeHtml(tokens[idx].content)
-        return f'<pre class="front-matter"><code>{content}</code></pre>\n'
+        token = tokens[idx]
+        add_token_class(token, "front-matter")
+        content = escapeHtml(token.content)
+        return f"<pre{self.renderAttrs(token)}><code>{content}</code></pre>\n"
 
     def task_checkbox(
         self,
@@ -588,8 +637,10 @@ class ReadingViewRenderer(RendererHTML):
         token = tokens[idx]
         code_html, highlighted = render_fenced_code(token.content, token.info)
         style_class = "code-highlight" if highlighted else "code-plain"
+        add_token_class(token, "code-block")
+        add_token_class(token, style_class)
         return (
-            f'<pre class="code-block {style_class}"><code>'
+            f"<pre{self.renderAttrs(token)}><code>"
             f"{code_html}</code></pre>\n"
         )
 
@@ -612,8 +663,10 @@ class ReadingViewRenderer(RendererHTML):
         env: dict[str, Any],
     ) -> str:
         del options, env
-        mathml = render_mathml(tokens[idx].content, "block")
-        return f'<div class="math-block">\n{mathml}\n</div>\n'
+        token = tokens[idx]
+        add_token_class(token, "math-block")
+        mathml = render_mathml(token.content, "block")
+        return f"<div{self.renderAttrs(token)}>\n{mathml}\n</div>\n"
 
     def image(
         self,
@@ -678,10 +731,10 @@ class ReadingViewRenderer(RendererHTML):
             identifier = f"label-{heading_slug(label)}"
         prefix = f'-{env["docId"]}-' if isinstance(env.get("docId"), str) else ""
         anchor_name = prefix + identifier
-        return (
-            f'<aside id="fn{escapeHtml(anchor_name)}" class="footnote-definition" '
-            f'data-footnote-index="{escapeHtml(number)}">'
-        )
+        token.attrSet("id", f"fn{anchor_name}")
+        add_token_class(token, "footnote-definition")
+        token.attrSet("data-footnote-index", number)
+        return f"<aside{self.renderAttrs(token)}>"
 
     def footnote_reference_close(
         self,
@@ -1308,6 +1361,35 @@ def annotate_tokens(tokens: Sequence[Token]) -> Counter[int]:
     return counts
 
 
+def annotate_source_map(tokens: Sequence[Token]) -> list[dict[str, Any]]:
+    """Attach deterministic ids to non-overlapping top-level author blocks."""
+    blocks: list[dict[str, Any]] = []
+    for token in tokens:
+        if token.level != 0 or token.type not in SOURCE_MAP_BLOCK_TAGS:
+            continue
+        configured_tag = SOURCE_MAP_BLOCK_TAGS[token.type]
+        tag = configured_tag if configured_tag is not None else token.tag
+        if not tag:
+            continue
+
+        block_id = f"b{len(blocks) + 1:06d}"
+        token.attrSet("data-al-block", block_id)
+        record: dict[str, Any] = {"id": block_id, "tag": tag}
+        if (
+            token.map is not None
+            and len(token.map) == 2
+            and all(isinstance(line, int) for line in token.map)
+            and 0 <= token.map[0] <= token.map[1]
+        ):
+            source_start = token.map[0] + 1
+            source_end = token.map[1] + 1
+            token.attrSet("data-source-lines", f"{source_start}:{source_end}")
+            record["sourceStartLine"] = source_start
+            record["sourceEndLineExclusive"] = source_end
+        blocks.append(record)
+    return blocks
+
+
 def document_title(tokens: Sequence[Token], fallback: str) -> str:
     for index, token in enumerate(tokens):
         if token.type == "heading_open" and token.tag == "h1":
@@ -1322,7 +1404,7 @@ def build_document(title: str, css: str, body: str) -> str:
     return (
         "<!doctype html>\n"
         '<html lang="und">\n'
-        "<head>\n"
+        f"{HEAD_INJECTION_MARKER}"
         '  <meta charset="utf-8">\n'
         '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"  <title>{escapeHtml(title)}</title>\n"
@@ -1374,14 +1456,127 @@ def assert_source_unchanged(path: Path, expected_digest: str) -> None:
         raise RenderError(f"source Markdown changed during rendering: {path}")
 
 
-def render_file(input_path: Path) -> tuple[Path, Counter[int]]:
+def resolve_input_path(input_path: Path) -> Path:
     input_path = input_path.expanduser().resolve()
     if not input_path.is_file():
         raise RenderError(f"Markdown file not found: {input_path}")
     if input_path.suffix.lower() != ".md":
         raise RenderError("input must be a .md file")
+    return input_path
+
+
+def resolve_write_target(
+    candidate: Path,
+    *,
+    label: str,
+    input_path: Path,
+    other_target: Path | None = None,
+) -> Path:
+    target = candidate.expanduser().resolve()
+    if target == input_path:
+        raise RenderError(f"refusing to overwrite source Markdown with {label}")
+    if other_target is not None and target == other_target:
+        raise RenderError(f"{label} must not use the HTML output path")
+    if not target.parent.is_dir():
+        raise RenderError(f"{label} parent directory does not exist: {target.parent}")
+    if target.exists() and not target.is_file():
+        raise RenderError(f"{label} target is not a file: {target}")
+    return target
+
+
+def write_temporary_payload(target: Path, payload: bytes) -> Path:
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f"{target.name}.tmp-", dir=target.parent
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        temporary_path.unlink(missing_ok=True)
+        raise
+    return temporary_path
+
+
+def restore_target(target: Path, previous_payload: bytes | None) -> None:
+    if previous_payload is None:
+        target.unlink(missing_ok=True)
+        return
+    temporary_path = write_temporary_payload(target, previous_payload)
+    try:
+        os.replace(temporary_path, target)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def commit_payloads(
+    payloads: Sequence[tuple[Path, bytes]],
+    *,
+    input_path: Path,
+    source_sha256: str,
+) -> None:
+    previous = {
+        target: target.read_bytes() if target.exists() else None
+        for target, _ in payloads
+    }
+    temporary: list[tuple[Path, Path]] = []
+    try:
+        for target, payload in payloads:
+            temporary.append((target, write_temporary_payload(target, payload)))
+    except BaseException:
+        for _, temporary_path in temporary:
+            temporary_path.unlink(missing_ok=True)
+        raise
+    committed: list[Path] = []
+    try:
+        assert_source_unchanged(input_path, source_sha256)
+        for target, temporary_path in temporary:
+            os.replace(temporary_path, target)
+            committed.append(target)
+        assert_source_unchanged(input_path, source_sha256)
+    except BaseException as error:
+        try:
+            for target in reversed(committed):
+                restore_target(target, previous[target])
+        except OSError as rollback_error:
+            raise RenderError(
+                f"render commit failed and output rollback failed: {rollback_error}"
+            ) from error
+        raise
+    finally:
+        for _, temporary_path in temporary:
+            temporary_path.unlink(missing_ok=True)
+
+
+def render_file_with_report(
+    input_path: Path,
+    *,
+    output_path: Path | None = None,
+    report_path: Path | None = None,
+    source_map: bool = False,
+) -> RenderResult:
+    input_path = resolve_input_path(input_path)
     if not THEME_PATH.is_file():
         raise RenderError(f"theme not found: {THEME_PATH}")
+
+    output_path = resolve_write_target(
+        output_path if output_path is not None else input_path.with_suffix(".html"),
+        label="HTML output",
+        input_path=input_path,
+    )
+    if report_path is not None:
+        report_path = resolve_write_target(
+            report_path,
+            label="JSON report",
+            input_path=input_path,
+            other_target=output_path,
+        )
 
     source_bytes = input_path.read_bytes()
     original_digest = hashlib.sha256(source_bytes).hexdigest()
@@ -1395,6 +1590,7 @@ def render_file(input_path: Path) -> tuple[Path, Counter[int]]:
     environment: dict[str, Any] = {}
     tokens = parser.parse(source, environment)
     counts = annotate_tokens(tokens)
+    blocks = annotate_source_map(tokens) if source_map else []
     body = parser.renderer.render(tokens, parser.options, environment)
     title = document_title(tokens, input_path.stem)
     html = build_document(title, css, body)
@@ -1402,12 +1598,43 @@ def render_file(input_path: Path) -> tuple[Path, Counter[int]]:
     assert_text_equivalent(tokens, html)
     assert_source_unchanged(input_path, original_digest)
 
-    output_path = input_path.with_suffix(".html")
-    if output_path.resolve() == input_path:
-        raise RenderError("refusing to overwrite source Markdown")
-    output_path.write_text(html, encoding="utf-8", newline="\n")
-    assert_source_unchanged(input_path, original_digest)
-    return output_path, counts
+    output_bytes = html.encode("utf-8")
+    report: dict[str, Any] = {
+        "schemaVersion": 1,
+        "sourceSha256": original_digest,
+        "outputSha256": hashlib.sha256(output_bytes).hexdigest(),
+        "title": title,
+        "rendererVersion": RENDERER_VERSION,
+        "ruleCounts": {
+            f"{number}:{RULE_NAMES[number]}": counts[number]
+            for number in sorted(RULE_NAMES)
+            if counts[number]
+        },
+        "blocks": blocks,
+    }
+    report_json = json.dumps(
+        report, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    payloads: list[tuple[Path, bytes]] = []
+    if report_path is not None:
+        payloads.append((report_path, f"{report_json}\n".encode("utf-8")))
+    payloads.append((output_path, output_bytes))
+    commit_payloads(
+        payloads, input_path=input_path, source_sha256=original_digest
+    )
+    return RenderResult(output_path, counts, report, report_json)
+
+
+def render_file(
+    input_path: Path,
+    output_path: Path | None = None,
+    *,
+    source_map: bool = False,
+) -> tuple[Path, Counter[int]]:
+    result = render_file_with_report(
+        input_path, output_path=output_path, source_map=source_map
+    )
+    return result.output_path, result.counts
 
 
 def format_report(counts: Counter[int]) -> str:
@@ -1424,17 +1651,46 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         description=("Render immutable Markdown as a self-contained HTML reading view.")
     )
     parser.add_argument("input", type=Path, help="UTF-8 .md file to render")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="write HTML to this existing directory instead of beside the source",
+    )
+    parser.add_argument(
+        "--report-json",
+        help="write the deterministic JSON report to a file, or '-' for stdout",
+    )
+    parser.add_argument(
+        "--source-map",
+        action="store_true",
+        help="add deterministic non-visible block and source-line attributes",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        output_path, counts = render_file(args.input)
+        report_path = (
+            Path(args.report_json)
+            if args.report_json is not None and args.report_json != "-"
+            else None
+        )
+        result = render_file_with_report(
+            args.input,
+            output_path=args.output,
+            report_path=report_path,
+            source_map=args.source_map,
+        )
     except (OSError, RenderError) as error:
         print(f"render failed: {error}", file=sys.stderr)
         return 1
-    print(f"rendered {output_path} | rules: {format_report(counts)}")
+    if args.report_json == "-":
+        print(result.report_json)
+    else:
+        print(
+            f"rendered {result.output_path} | rules: {format_report(result.counts)}"
+        )
     return 0
 
 
