@@ -1,4 +1,5 @@
 markdown-it-py==4.0.0
+mdurl==0.1.2
 mdit-py-plugins==0.6.1
 latex2mathml==3.81.0
 Pygments==2.20.0

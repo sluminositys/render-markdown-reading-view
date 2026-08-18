@@ -59,9 +59,7 @@ class FormulaRenderingTests(unittest.TestCase):
         html = render.build_document("Audit", "", body)
         self.assertEqual(counts[17], 1)
 
-        tampered = html.replace(
-            "E = mc^2</annotation>", "E = mc^3</annotation>", 1
-        )
+        tampered = html.replace("E = mc^2</annotation>", "E = mc^3</annotation>", 1)
         with self.assertRaisesRegex(
             render.RenderError, "formula-source equivalence check failed"
         ):
@@ -77,23 +75,17 @@ class FormulaRenderingTests(unittest.TestCase):
             valid_output = output_path.read_bytes()
 
             invalid_source = "# Formula\n\nInvalid $x_{$.\n"
-            markdown_path.write_text(
-                invalid_source, encoding="utf-8", newline="\n"
-            )
+            markdown_path.write_text(invalid_source, encoding="utf-8", newline="\n")
             with self.assertRaises(render.RenderError):
                 render.render_file(markdown_path)
 
             self.assertEqual(output_path.read_bytes(), valid_output)
-            self.assertEqual(
-                markdown_path.read_text(encoding="utf-8"), invalid_source
-            )
+            self.assertEqual(markdown_path.read_text(encoding="utf-8"), invalid_source)
 
     def test_currency_like_text_is_not_inferred_as_math(self) -> None:
         tokens = render.build_parser().parse("价格为 $100，折扣后 $80。")
         child_types = [
-            child.type
-            for token in tokens
-            for child in (token.children or [])
+            child.type for token in tokens for child in (token.children or [])
         ]
         self.assertNotIn("math_inline", child_types)
 
@@ -105,9 +97,7 @@ class FormulaRenderingTests(unittest.TestCase):
         )
         for formula in unsafe_formulas:
             with self.subTest(formula=formula):
-                with self.assertRaisesRegex(
-                    render.RenderError, "unsafe|malformed"
-                ):
+                with self.assertRaisesRegex(render.RenderError, "unsafe|malformed"):
                     render.render_mathml(formula, "inline")
 
     def test_common_math_structures_pass_safety_allowlist(self) -> None:
@@ -124,7 +114,7 @@ class FormulaRenderingTests(unittest.TestCase):
         source = (
             "# Code\n\n"
             "```python\n"
-            "def render(value: str = \"<script>\") -> str:\n"
+            'def render(value: str = "<script>") -> str:\n'
             "    return value  # unchanged\n"
             "```\n"
         )
@@ -171,6 +161,138 @@ class FormulaRenderingTests(unittest.TestCase):
             render.RenderError, "fenced-code source equivalence check failed"
         ):
             render.assert_text_equivalent(tokens, tampered)
+
+
+class DocumentSyntaxCompatibilityTests(unittest.TestCase):
+    def render_source(
+        self, source: str, filename: str = "document.md"
+    ) -> tuple[str, object]:
+        with tempfile.TemporaryDirectory() as directory:
+            markdown_path = Path(directory) / filename
+            markdown_path.write_text(source, encoding="utf-8", newline="\n")
+            original = markdown_path.read_bytes()
+            output_path, counts = render.render_file(markdown_path)
+            html = output_path.read_text(encoding="utf-8")
+            self.assertEqual(original, markdown_path.read_bytes())
+            return html, counts
+
+    def test_front_matter_is_metadata_not_a_false_heading(self) -> None:
+        source = "---\ntitle: Demo\ntags: [a, b]\n---\n\n# Body\n"
+        html, counts = self.render_source(source)
+
+        self.assertIn('<pre class="front-matter"><code>title: Demo', html)
+        self.assertIn('<h1 id="body">Body</h1>', html)
+        self.assertNotIn("<h2>title: Demo", html)
+        self.assertEqual(counts[19], 1)
+
+    def test_gfm_tasks_strikethrough_autolinks_and_heading_ids(self) -> None:
+        source = (
+            "## Install Guide\n\n"
+            "- [x] shipped\n"
+            "- [ ] pending\n"
+            "- ordinary sibling\n\n"
+            "Keep ~~obsolete~~ notes at https://example.com/docs、**粗体**。\n\n"
+            "## Install Guide\n"
+        )
+        html, counts = self.render_source(source)
+
+        self.assertIn('<h2 id="install-guide">Install Guide</h2>', html)
+        self.assertIn('<h2 id="install-guide-1">Install Guide</h2>', html)
+        self.assertIn('class="task-checkbox is-checked"', html)
+        self.assertIn('class="task-checkbox"', html)
+        self.assertNotIn("[x] shipped", html)
+        self.assertIn("<s>obsolete</s>", html)
+        self.assertIn(
+            '<a href="https://example.com/docs">https://example.com/docs</a>',
+            html,
+        )
+        self.assertIn("、<strong>粗体</strong>。", html)
+        self.assertEqual(counts[20], 2)
+        self.assertEqual(counts[21], 1)
+        self.assertEqual(counts[23], 1)
+        self.assertEqual(counts[24], 2)
+
+    def test_footnotes_definition_lists_and_bracket_math(self) -> None:
+        source = (
+            "Term\n: Definition **text**\n\n"
+            r"Inline \(x^2\) has a note[^proof]." + "\n\n"
+            "\\[\n"
+            "y = \\frac{1}{2}\n"
+            "\\]\n\n"
+            "[^proof]: Preserved source.\n\n"
+            "After the definition.\n"
+        )
+        html, counts = self.render_source(source)
+
+        self.assertIn("<dl>", html)
+        self.assertIn("<dt>Term</dt>", html)
+        self.assertIn("<dd>Definition <strong>text</strong></dd>", html)
+        self.assertIn('data-footnote-index="1"', html)
+        self.assertIn("Preserved source.", html)
+        self.assertLess(
+            html.index("Preserved source."), html.index("After the definition.")
+        )
+        self.assertIn("<math", html)
+        self.assertIn("x^2</annotation>", html)
+        self.assertEqual(counts[22], 1)
+        self.assertEqual(counts[25], 2)
+        self.assertEqual(counts[26], 1)
+
+    def test_inline_and_standalone_images_use_distinct_components(self) -> None:
+        source = (
+            "Status ![green badge](badge.svg) remains inline.\n\n"
+            "![Standalone figure](figure.svg)\n"
+        )
+        html, counts = self.render_source(source)
+
+        self.assertIn("reading-figure reading-figure-inline", html)
+        self.assertIn('<figure class="reading-figure"><img src="figure.svg"', html)
+        self.assertEqual(counts[15], 1)
+        self.assertEqual(counts[27], 1)
+
+    def test_safe_html_allowlist_and_unsafe_html_escaping(self) -> None:
+        source = (
+            "<details open>\n"
+            "<summary>More</summary>\n\n"
+            "Press <kbd>Ctrl</kbd> and mark <mark>this</mark>.<br>Next line.\n\n"
+            "</details>\n\n"
+            "<script>alert(1)</script>\n\n"
+            "<img src=x onerror=alert(2)>\n\n"
+            "<!-- internal note -->\n"
+        )
+        html, counts = self.render_source(source)
+
+        self.assertIn("<details open>", html)
+        self.assertIn("<summary>More</summary>", html)
+        self.assertIn("<kbd>Ctrl</kbd>", html)
+        self.assertIn("<mark>this</mark>", html)
+        self.assertNotIn("<script>alert", html)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+        self.assertNotIn("<img src=x", html)
+        self.assertIn("&lt;img src=x onerror=alert(2)&gt;", html)
+        self.assertNotIn("internal note", html)
+        self.assertGreaterEqual(counts[28], 1)
+
+    def test_mermaid_remains_an_exact_plain_source_block(self) -> None:
+        source = "```mermaid\ngraph TD\n  A --> B\n```\n"
+        html, counts = self.render_source(source)
+
+        self.assertIn('class="code-block code-plain"', html)
+        self.assertIn("graph TD\n  A --&gt; B\n", html)
+        self.assertEqual(counts[14], 1)
+
+    def test_partial_status_and_definition_lists_stay_plain(self) -> None:
+        sources = (
+            "- ✅ explicit state\n- ordinary item\n",
+            "- **Owner**: Lin\n- Due Friday\n",
+        )
+        for index, source in enumerate(sources):
+            with self.subTest(index=index):
+                html, counts = self.render_source(source, f"mixed-{index}.md")
+                self.assertIn('<ul class="plain-list">', html)
+                self.assertNotIn('class="status-list"', html)
+                self.assertNotIn('class="definition-list"', html)
+                self.assertEqual(counts[10], 1)
 
 
 if __name__ == "__main__":
