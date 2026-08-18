@@ -334,6 +334,54 @@ pre code {
   font-size: inherit;
 }
 
+math {
+  color: var(--ink);
+  font-family: "STIX Two Math", "Cambria Math", "Latin Modern Math",
+    "Noto Sans Math", serif;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+math annotation {
+  display: none;
+}
+
+.math-inline {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0 0.08em;
+  overflow-x: auto;
+  overflow-y: hidden;
+  line-height: 1;
+  vertical-align: -0.18em;
+  scrollbar-width: thin;
+}
+
+.math-inline math {
+  display: inline-block;
+  font-size: 1.08em;
+}
+
+.math-block {
+  max-width: 100%;
+  margin: 1.55em 0;
+  padding: 1.12em 1.28em;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--code-bg);
+  text-align: center;
+  scrollbar-color: var(--ink-3) transparent;
+  scrollbar-width: thin;
+}
+
+.math-block math {
+  display: block;
+  width: max-content;
+  margin: 0 auto;
+  font-size: 1.12em;
+}
+
 .table-wrap {
   max-width: 100%;
   margin: 1.45em 0;
@@ -457,9 +505,15 @@ figcaption {
   .admonition,
   .quiet-quote,
   pre,
+  .math-block,
   .table-wrap,
   .reading-figure {
     break-inside: avoid;
+  }
+
+  .math-block {
+    overflow: visible;
+    background: #ffffff;
   }
 
   .file-chip::before {

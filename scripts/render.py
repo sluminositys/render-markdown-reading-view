@@ -12,11 +12,14 @@ from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Sequence
+from xml.etree import ElementTree
 
+from latex2mathml.converter import convert as latex_to_mathml
 from markdown_it import MarkdownIt
 from markdown_it.common.utils import escapeHtml
 from markdown_it.renderer import RendererHTML
 from markdown_it.token import Token
+from mdit_py_plugins.dollarmath import dollarmath_plugin
 
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +31,127 @@ ADMONITION_RE = re.compile(
 DEFINITION_ITEM_RE = re.compile(r"^\*\*(?=\S)([^*\n]+?)\*\*[:：][ \t]?\S")
 FILE_SUFFIX_RE = re.compile(r"\.([A-Za-z0-9]+)$")
 WHITESPACE_RE = re.compile(r"\s+", re.UNICODE)
+MATH_ANNOTATION_ENCODING = "application/x-tex"
+MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML"
+MATH_TOKEN_TYPES = {"math_inline", "math_inline_double", "math_block"}
+ALLOWED_MATHML_ELEMENTS = {
+    "maligngroup",
+    "malignmark",
+    "menclose",
+    "merror",
+    "mfenced",
+    "mfrac",
+    "mi",
+    "mlabeledtr",
+    "mlongdiv",
+    "mmultiscripts",
+    "mn",
+    "mo",
+    "mover",
+    "mpadded",
+    "mphantom",
+    "mprescripts",
+    "mroot",
+    "mrow",
+    "ms",
+    "mscarries",
+    "mscarry",
+    "msgroup",
+    "msline",
+    "mspace",
+    "msqrt",
+    "msrow",
+    "mstack",
+    "mstyle",
+    "msub",
+    "msubsup",
+    "msup",
+    "mtable",
+    "mtd",
+    "mtext",
+    "mtr",
+    "munder",
+    "munderover",
+    "none",
+}
+ALLOWED_MATHML_ATTRIBUTES = {
+    "accent",
+    "accentunder",
+    "align",
+    "bevelled",
+    "border-color",
+    "charalign",
+    "close",
+    "columnalign",
+    "columnlines",
+    "columnspacing",
+    "columnspan",
+    "columnwidth",
+    "depth",
+    "dir",
+    "display",
+    "displaystyle",
+    "edge",
+    "equalcolumns",
+    "equalrows",
+    "fence",
+    "form",
+    "frame",
+    "framespacing",
+    "height",
+    "indentalign",
+    "indentalignfirst",
+    "indentalignlast",
+    "indentshift",
+    "indentshiftfirst",
+    "indentshiftlast",
+    "indenttarget",
+    "infixlinebreakstyle",
+    "largeop",
+    "length",
+    "linebreak",
+    "linebreakmultchar",
+    "linebreakstyle",
+    "lineleading",
+    "linethickness",
+    "location",
+    "longdivstyle",
+    "lspace",
+    "mathbackground",
+    "mathcolor",
+    "mathsize",
+    "mathvariant",
+    "maxsize",
+    "minlabelspacing",
+    "minsize",
+    "movablelimits",
+    "notation",
+    "numalign",
+    "open",
+    "position",
+    "rowalign",
+    "rowlines",
+    "rowspacing",
+    "rowspan",
+    "rspace",
+    "scriptlevel",
+    "scriptminsize",
+    "scriptsizemultiplier",
+    "selection",
+    "separator",
+    "separators",
+    "shift",
+    "side",
+    "stackalign",
+    "stretchy",
+    "subscriptshift",
+    "superscriptshift",
+    "symmetric",
+    "voffset",
+    "width",
+}
+
+ElementTree.register_namespace("", MATHML_NAMESPACE)
 
 STATUS_GLYPHS = ("✅", "⚠️", "🔴", "❌")
 KNOWN_EXTENSIONS = {
@@ -71,6 +195,8 @@ RULE_NAMES = {
     14: "code-fence",
     15: "figure",
     16: "base-style",
+    17: "inline-math",
+    18: "display-math",
 }
 
 
@@ -78,34 +204,146 @@ class RenderError(RuntimeError):
     """A safe rendering failure that must not produce a new HTML file."""
 
 
+def math_placeholder(index: int) -> str:
+    """Return an audit-only marker that fixes a formula's document position."""
+    return f"\ue000formula:{index}\ue001"
+
+
+def xml_name(value: str) -> tuple[str | None, str]:
+    """Split an ElementTree expanded name into namespace and local name."""
+    if value.startswith("{") and "}" in value:
+        namespace, local_name = value[1:].split("}", 1)
+        return namespace, local_name
+    return None, value
+
+
+def validate_mathml(root: ElementTree.Element, display: str) -> None:
+    """Reject converter output outside a static presentation-only subset."""
+    root_namespace, root_name = xml_name(root.tag)
+    if root_namespace != MATHML_NAMESPACE or root_name != "math":
+        raise RenderError("math converter returned a non-MathML root")
+    if root.attrib.get("display") != display:
+        raise RenderError("math converter returned an unexpected display mode")
+
+    for element in root.iter():
+        namespace, local_name = xml_name(element.tag)
+        if element is not root and (
+            namespace != MATHML_NAMESPACE
+            or local_name not in ALLOWED_MATHML_ELEMENTS
+        ):
+            raise RenderError(
+                f"math converter returned unsafe element: {local_name}"
+            )
+        for attribute_name in element.attrib:
+            attribute_namespace, attribute_local_name = xml_name(attribute_name)
+            if (
+                attribute_namespace is not None
+                or attribute_local_name not in ALLOWED_MATHML_ATTRIBUTES
+            ):
+                raise RenderError(
+                    "math converter returned unsafe attribute: "
+                    f"{attribute_local_name}"
+                )
+
+
 class VisibleTextParser(HTMLParser):
-    """Collect text nodes that belong to the rendered document body."""
+    """Collect visible prose and exact TeX annotations from the document body."""
 
     IGNORED_ELEMENTS = {"head", "script", "style", "template"}
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
+        self.formula_sources: list[str] = []
         self._ignored_depth = 0
+        self._math_depth = 0
+        self._annotation_depth = 0
+        self._annotation_parts: list[str] = []
+        self._formula_index = 0
 
     def handle_starttag(
         self, tag: str, attrs: list[tuple[str, str | None]]
     ) -> None:
-        del attrs
         if tag in self.IGNORED_ELEMENTS:
             self._ignored_depth += 1
+            return
+        if self._ignored_depth:
+            return
+        if tag == "math":
+            if not self._math_depth:
+                self.parts.append(math_placeholder(self._formula_index))
+                self._formula_index += 1
+            self._math_depth += 1
+            return
+        if tag == "annotation" and self._math_depth:
+            attributes = dict(attrs)
+            if attributes.get("encoding") == MATH_ANNOTATION_ENCODING:
+                self._annotation_depth += 1
+                if self._annotation_depth == 1:
+                    self._annotation_parts = []
 
     def handle_endtag(self, tag: str) -> None:
         if tag in self.IGNORED_ELEMENTS and self._ignored_depth:
             self._ignored_depth -= 1
+            return
+        if self._ignored_depth:
+            return
+        if tag == "annotation" and self._annotation_depth:
+            self._annotation_depth -= 1
+            if not self._annotation_depth:
+                self.formula_sources.append("".join(self._annotation_parts))
+                self._annotation_parts = []
+            return
+        if tag == "math" and self._math_depth:
+            self._math_depth -= 1
 
     def handle_data(self, data: str) -> None:
-        if not self._ignored_depth:
+        if self._ignored_depth:
+            return
+        if self._annotation_depth:
+            self._annotation_parts.append(data)
+        elif not self._math_depth:
             self.parts.append(data)
 
     @property
     def text(self) -> str:
         return "".join(self.parts)
+
+
+def render_mathml(source: str, display: str) -> str:
+    """Compile TeX to MathML and embed the exact token source for auditing."""
+    visual_source = source.strip()
+    if not visual_source:
+        raise RenderError("formula source is empty")
+    try:
+        mathml = latex_to_mathml(visual_source, display=display)
+    except Exception as error:
+        preview = normalize_whitespace(source)[:80]
+        raise RenderError(
+            f"invalid {display} formula {preview!r}: "
+            f"{type(error).__name__}: {error}"
+        ) from error
+
+    try:
+        root = ElementTree.fromstring(mathml)
+    except ElementTree.ParseError as error:
+        raise RenderError(
+            "math converter returned unsafe or malformed MathML"
+        ) from error
+    validate_mathml(root, display)
+
+    semantics = ElementTree.Element(f"{{{MATHML_NAMESPACE}}}semantics")
+    for child in list(root):
+        root.remove(child)
+        semantics.append(child)
+    annotation = ElementTree.SubElement(
+        semantics,
+        f"{{{MATHML_NAMESPACE}}}annotation",
+        {"encoding": MATH_ANNOTATION_ENCODING},
+    )
+    annotation.text = source
+    root.append(semantics)
+    return ElementTree.tostring(root, encoding="unicode", short_empty_elements=True)
 
 
 class ReadingViewRenderer(RendererHTML):
@@ -137,6 +375,28 @@ class ReadingViewRenderer(RendererHTML):
     ) -> str:
         del options, env
         return f"<pre><code>{escapeHtml(tokens[idx].content)}</code></pre>\n"
+
+    def math_inline(
+        self,
+        tokens: Sequence[Token],
+        idx: int,
+        options: dict[str, Any],
+        env: dict[str, Any],
+    ) -> str:
+        del options, env
+        mathml = render_mathml(tokens[idx].content, "inline")
+        return f'<span class="math-inline">{mathml}</span>'
+
+    def math_block(
+        self,
+        tokens: Sequence[Token],
+        idx: int,
+        options: dict[str, Any],
+        env: dict[str, Any],
+    ) -> str:
+        del options, env
+        mathml = render_mathml(tokens[idx].content, "block")
+        return f'<div class="math-block">\n{mathml}\n</div>\n'
 
     def image(
         self,
@@ -181,7 +441,7 @@ class ReadingViewRenderer(RendererHTML):
 
 def build_parser() -> MarkdownIt:
     """Create the one parser configuration used for rendering and auditing."""
-    return MarkdownIt(
+    parser = MarkdownIt(
         "commonmark",
         {
             "breaks": False,
@@ -191,6 +451,17 @@ def build_parser() -> MarkdownIt:
         },
         renderer_cls=ReadingViewRenderer,
     ).enable("table")
+    parser.use(
+        dollarmath_plugin,
+        allow_labels=False,
+        allow_space=True,
+        allow_digits=False,
+        allow_blank_lines=False,
+        double_inline=False,
+    )
+    parser.add_render_rule("math_inline", ReadingViewRenderer.math_inline)
+    parser.add_render_rule("math_block", ReadingViewRenderer.math_block)
+    return parser
 
 
 def inline_plain_text(children: Sequence[Token] | None) -> str:
@@ -201,34 +472,60 @@ def inline_plain_text(children: Sequence[Token] | None) -> str:
             parts.append(token.content)
         elif token.type == "image":
             parts.append(inline_plain_text(token.children))
+        elif token.type in MATH_TOKEN_TYPES:
+            parts.append(token.content)
         elif token.type in {"softbreak", "hardbreak"}:
             parts.append("\n")
     return "".join(parts)
 
 
-def markdown_visible_text(tokens: Sequence[Token]) -> str:
-    """Extract Markdown author text from the same parsed token stream."""
+def inline_audit_text(
+    children: Sequence[Token] | None, formula_sources: list[str]
+) -> str:
+    """Extract prose while replacing formulas with positional audit markers."""
     parts: list[str] = []
+    for token in children or []:
+        if token.type in {"text", "code_inline", "html_inline"}:
+            parts.append(token.content)
+        elif token.type == "image":
+            parts.append(inline_audit_text(token.children, formula_sources))
+        elif token.type in MATH_TOKEN_TYPES:
+            formula_index = len(formula_sources)
+            formula_sources.append(token.content)
+            parts.append(math_placeholder(formula_index))
+        elif token.type in {"softbreak", "hardbreak"}:
+            parts.append("\n")
+    return "".join(parts)
+
+
+def markdown_audit_payload(tokens: Sequence[Token]) -> tuple[str, list[str]]:
+    """Extract positioned prose and exact TeX sources from parsed Markdown."""
+    parts: list[str] = []
+    formula_sources: list[str] = []
     for token in tokens:
         if token.type == "inline":
-            value = inline_plain_text(token.children)
+            value = inline_audit_text(token.children, formula_sources)
             if value:
                 parts.append(value)
+        elif token.type in {"math_block", "math_block_label"}:
+            formula_index = len(formula_sources)
+            formula_sources.append(token.content)
+            parts.append(math_placeholder(formula_index))
         elif token.type in {"fence", "code_block", "html_block"}:
             if token.content:
                 parts.append(token.content)
-    return "\n".join(parts)
+    return "\n".join(parts), formula_sources
 
 
 def normalize_whitespace(value: str) -> str:
     return WHITESPACE_RE.sub(" ", value).strip()
 
 
-def visible_html_text(html: str) -> str:
+def html_audit_payload(html: str) -> tuple[str, list[str]]:
     parser = VisibleTextParser()
     parser.feed(html)
     parser.close()
-    return parser.text
+    return parser.text, parser.formula_sources
 
 
 def text_diff(expected: str, actual: str) -> str:
@@ -238,6 +535,19 @@ def text_diff(expected: str, actual: str) -> str:
             [actual + "\n"],
             fromfile="markdown-visible-text",
             tofile="html-visible-text",
+        )
+    )
+
+
+def formula_diff(expected: Sequence[str], actual: Sequence[str]) -> str:
+    expected_lines = [f"{index}: {value!r}\n" for index, value in enumerate(expected)]
+    actual_lines = [f"{index}: {value!r}\n" for index, value in enumerate(actual)]
+    return "".join(
+        difflib.unified_diff(
+            expected_lines,
+            actual_lines,
+            fromfile="markdown-formula-sources",
+            tofile="html-mathml-annotations",
         )
     )
 
@@ -457,6 +767,8 @@ def annotate_inline_rules(tokens: Sequence[Token], counts: Counter[int]) -> None
             counts[14] += 1
         elif token.type == "hr":
             counts[16] += 1
+        elif token.type in {"math_block", "math_block_label"}:
+            counts[18] += 1
         if token.type != "inline":
             continue
 
@@ -478,6 +790,8 @@ def annotate_inline_rules(tokens: Sequence[Token], counts: Counter[int]) -> None
             elif child.type == "image":
                 has_image = True
                 counts[15] += 1
+            elif child.type in {"math_inline", "math_inline_double"}:
+                counts[17] += 1
             elif child.type in {"link_open", "strong_open", "em_open"}:
                 counts[16] += 1
 
@@ -534,11 +848,19 @@ def build_document(title: str, css: str, body: str) -> str:
 
 
 def assert_text_equivalent(tokens: Sequence[Token], html: str) -> None:
-    expected = normalize_whitespace(markdown_visible_text(tokens))
-    actual = normalize_whitespace(visible_html_text(html))
-    if expected != actual:
+    expected_text, expected_formulas = markdown_audit_payload(tokens)
+    actual_text, actual_formulas = html_audit_payload(html)
+    expected_text = normalize_whitespace(expected_text)
+    actual_text = normalize_whitespace(actual_text)
+    if expected_text != actual_text:
         raise RenderError(
-            "visible-text equivalence check failed\n" + text_diff(expected, actual)
+            "visible-text and formula-position equivalence check failed\n"
+            + text_diff(expected_text, actual_text)
+        )
+    if expected_formulas != actual_formulas:
+        raise RenderError(
+            "formula-source equivalence check failed\n"
+            + formula_diff(expected_formulas, actual_formulas)
         )
 
 

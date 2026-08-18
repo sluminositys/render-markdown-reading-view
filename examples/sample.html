@@ -341,6 +341,54 @@ pre code {
   font-size: inherit;
 }
 
+math {
+  color: var(--ink);
+  font-family: "STIX Two Math", "Cambria Math", "Latin Modern Math",
+    "Noto Sans Math", serif;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+math annotation {
+  display: none;
+}
+
+.math-inline {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0 0.08em;
+  overflow-x: auto;
+  overflow-y: hidden;
+  line-height: 1;
+  vertical-align: -0.18em;
+  scrollbar-width: thin;
+}
+
+.math-inline math {
+  display: inline-block;
+  font-size: 1.08em;
+}
+
+.math-block {
+  max-width: 100%;
+  margin: 1.55em 0;
+  padding: 1.12em 1.28em;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--code-bg);
+  text-align: center;
+  scrollbar-color: var(--ink-3) transparent;
+  scrollbar-width: thin;
+}
+
+.math-block math {
+  display: block;
+  width: max-content;
+  margin: 0 auto;
+  font-size: 1.12em;
+}
+
 .table-wrap {
   max-width: 100%;
   margin: 1.45em 0;
@@ -464,9 +512,15 @@ figcaption {
   .admonition,
   .quiet-quote,
   pre,
+  .math-block,
   .table-wrap,
   .reading-figure {
     break-inside: avoid;
+  }
+
+  .math-block {
+    overflow: visible;
+    background: #ffffff;
   }
 
   .file-chip::before {
@@ -536,6 +590,18 @@ figcaption {
 <h2>行内元素</h2>
 <p>已知文件 <code class="file-chip file-ext-py">scripts/render.py</code>、<code class="file-chip file-ext-md">README.md</code> 和未知扩展名路径 <code class="file-chip file-ext-unknown">/var/cache/archive.bin</code> 使用文件胶囊；<code class="inline-code">archive.bin</code> 与 <code class="inline-code">render</code> 使用普通行内 code。这里还有一个<a href="https://example.com">项目链接</a>、<strong>粗体内容</strong>和<em>斜体内容</em>。</p>
 <hr />
+<h2>数学公式</h2>
+<p>行内公式 <span class="math-inline"><math xmlns="http://www.w3.org/1998/Math/MathML" display="inline"><semantics><mrow><mi>E</mi><mo>=</mo><mi>m</mi><msup><mi>c</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">E = mc^2</annotation></semantics></math></span> 与 <span class="math-inline"><math xmlns="http://www.w3.org/1998/Math/MathML" display="inline"><semantics><mrow><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup><mo>=</mo><msup><mi>c</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">a^2 + b^2 = c^2</annotation></semantics></math></span> 跟随正文基线排版。</p>
+<div class="math-block">
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>x</mi><mo>=</mo><mfrac><mrow><mo>−</mo><mi>b</mi><mi>±</mi><msqrt><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi></mrow></msqrt></mrow><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+</annotation></semantics></math>
+</div>
+<div class="math-block">
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mo>softmax</mo><mo stretchy="false">(</mo><msub><mi>z</mi><mi>i</mi></msub><mo stretchy="false">)</mo><mo>=</mo><mfrac><mrow><msup><mi>e</mi><mrow><msub><mi>z</mi><mi>i</mi></msub></mrow></msup></mrow><mrow><msubsup><mo>∑</mo><mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow><mrow><mi>K</mi></mrow></msubsup><msup><mi>e</mi><mrow><msub><mi>z</mi><mi>j</mi></msub></mrow></msup></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+\operatorname{softmax}(z_i) = \frac{e^{z_i}}{\sum_{j=1}^{K} e^{z_j}}
+</annotation></semantics></math>
+</div>
 <h2>表格</h2>
 <div class="table-wrap">
 <table>
